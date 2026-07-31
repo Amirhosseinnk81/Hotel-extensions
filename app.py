@@ -18,7 +18,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, PageTemplate, Paragraph, Spacer, Table, TableStyle
 from sqlalchemy import or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -86,6 +86,11 @@ def create_app():
         query = request.args.get('q', '').strip()
         department_id = request.args.get('department', type=int)
         status = request.args.get('status', '')
+        per_page_raw = request.args.get('per_page', '20').strip().lower()
+        page = request.args.get('page', 1, type=int)
+        if page < 1:
+            page = 1
+
         entries = Extension.query
         if query:
             pattern = f'%{query}%'
@@ -96,8 +101,37 @@ def create_app():
             entries = entries.filter_by(is_active=True)
         elif status == 'inactive':
             entries = entries.filter_by(is_active=False)
-        entries = entries.order_by(Extension.extension).all()
-        return render_template('index.html', entries=entries, departments=Department.query.order_by(Department.name).all(), query=query, selected_department=department_id, status=status)
+        entries = entries.order_by(Extension.extension)
+
+        total_count = entries.count()
+        show_all = per_page_raw == 'all'
+        allowed_per_page = (20, 50, 100)
+        per_page = 20 if show_all else per_page_raw
+        if not show_all:
+            per_page = per_page_raw if per_page_raw.isdigit() and int(per_page_raw) in allowed_per_page else 20
+            per_page = int(per_page)
+
+        if show_all:
+            total_pages = 1
+            page = 1
+            page_entries = entries.all()
+        else:
+            total_pages = max(1, (total_count + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            page_entries = entries.offset((page - 1) * per_page).limit(per_page).all()
+
+        return render_template(
+            'index.html',
+            entries=page_entries,
+            departments=Department.query.order_by(Department.name).all(),
+            query=query,
+            selected_department=department_id,
+            status=status,
+            per_page=('all' if show_all else per_page),
+            page=page,
+            total_pages=total_pages,
+            total_count=total_count,
+        )
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -238,6 +272,21 @@ def create_app():
             return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='hotel_extensions.xlsx')
         return 'فرمت نامعتبر است.', 404
 
+    @app.route('/export/pdf')
+    def public_export_pdf():
+        departments = Department.query.order_by(Department.name).all()
+        if not departments:
+            flash('هنوز داخلی‌ای برای خروجی گرفتن ثبت نشده است.', 'danger')
+            return redirect(url_for('index'))
+        font_path = app.config['PDF_FONT_PATH']
+        if not os.path.isfile(font_path):
+            flash('فونت فارسی برای ساخت PDF پیدا نشد. مسیر PDF_FONT_PATH را تنظیم کنید.', 'danger')
+            return redirect(url_for('index'))
+        output = io.BytesIO()
+        build_extensions_pdf(output, departments, font_path)
+        output.seek(0)
+        return send_file(output, mimetype='application/pdf', as_attachment=True, download_name='hotel_extensions.pdf')
+
     @app.route('/admin/export/pdf')
     @login_required
     def export_pdf():
@@ -310,45 +359,76 @@ def pdf_text(value):
 
 
 def build_extensions_pdf(output, departments, font_path):
+    """Compact two-column landscape report: black title bar + one small
+    table per department (department name as a header band, then
+    title/extension rows), flowing departments through two columns."""
     font_name = 'TahomaPDF'
     try:
         pdfmetrics.getFont(font_name)
     except KeyError:
         pdfmetrics.registerFont(TTFont(font_name, font_path))
-    document = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=1.2 * cm, leftMargin=1.2 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm)
+
+    page_w, page_h = landscape(A4)
+    margin = 1 * cm
+    gutter = 0.7 * cm
+    col_width = (page_w - 2 * margin - gutter) / 2
+
+    document = BaseDocTemplate(
+        output, pagesize=landscape(A4),
+        rightMargin=margin, leftMargin=margin, topMargin=margin, bottomMargin=margin,
+    )
+    frame_right = Frame(page_w - margin - col_width, margin, col_width, page_h - 2 * margin, id='right', showBoundary=0)
+    frame_left = Frame(margin, margin, col_width, page_h - 2 * margin, id='left', showBoundary=0)
+    document.addPageTemplates([PageTemplate(id='two-col', frames=[frame_right, frame_left])])
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('PersianTitle', parent=styles['Title'], fontName=font_name, fontSize=18, leading=25, alignment=TA_CENTER, textColor=colors.HexColor('#12263f'))
-    heading_style = ParagraphStyle('PersianHeading', parent=styles['Heading2'], fontName=font_name, fontSize=14, leading=20, alignment=TA_RIGHT, textColor=colors.HexColor('#2166d1'), spaceBefore=10, spaceAfter=8)
-    cell_style = ParagraphStyle('PersianCell', parent=styles['Normal'], fontName=font_name, fontSize=9, leading=14, alignment=TA_RIGHT)
-    story = [Paragraph(pdf_text('فهرست داخلی‌های هتل'), title_style), Spacer(1, 0.35 * cm)]
+    title_style = ParagraphStyle('PersianTitle', parent=styles['Title'], fontName=font_name, fontSize=13, leading=18, alignment=TA_CENTER, textColor=colors.white)
+    empty_style = ParagraphStyle('PersianEmpty', parent=styles['Normal'], fontName=font_name, fontSize=10, alignment=TA_RIGHT, textColor=colors.HexColor('#6b7686'))
+
+    story = []
+    title_table = Table([[Paragraph(pdf_text('لیست داخلی‌های هتل آراز'), title_style)]], colWidths=[col_width])
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.black),
+        ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+    ]))
+    story.append(title_table)
+    story.append(Spacer(1, 0.4 * cm))
+
     included = [d for d in departments if d.extension_entries]
     if not included:
-        story.append(Paragraph(pdf_text('هیچ داخلی‌ای برای بخش انتخاب‌شده ثبت نشده است.'), heading_style))
-    for index, department in enumerate(included):
-        story.append(Paragraph(pdf_text(f'بخش: {department.name}'), heading_style))
-        rows = [[pdf_text('وضعیت'), pdf_text('محل'), pdf_text('مسئول'), pdf_text('عنوان'), pdf_text('داخلی')]]
+        story.append(Paragraph(pdf_text('هیچ داخلی‌ای برای بخش انتخاب‌شده ثبت نشده است.'), empty_style))
+
+    dept_header_style = ParagraphStyle('DeptHeader', parent=styles['Normal'], fontName=font_name, fontSize=10, leading=14, alignment=TA_CENTER, textColor=colors.white)
+    cell_style = ParagraphStyle('PersianCell', parent=styles['Normal'], fontName=font_name, fontSize=8.3, leading=12, alignment=TA_RIGHT)
+    cell_style_num = ParagraphStyle('PersianCellNum', parent=cell_style, alignment=TA_CENTER)
+
+    for department in included:
         entries = sorted(department.extension_entries, key=lambda item: item.extension)
+        rows = [[Paragraph(pdf_text(department.name), dept_header_style), '']]
         for entry in entries:
             rows.append([
-                pdf_text('فعال' if entry.is_active else 'غیرفعال'),
-                pdf_text(entry.location), pdf_text(entry.person_name),
-                pdf_text(entry.title), pdf_text(entry.extension),
+                Paragraph(pdf_text(entry.title), cell_style),
+                Paragraph(pdf_text(entry.extension), cell_style_num),
             ])
-        table = Table(rows, colWidths=[3 * cm, 4.4 * cm, 4.5 * cm, 7.1 * cm, 3 * cm], repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#173f70')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        block = Table(rows, colWidths=[col_width * 0.68, col_width * 0.32])
+        row_styles = [
+            ('SPAN', (0, 0), (-1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d2340')),
             ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#d8e2ef')),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f8fc')]),
+            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#dcdfe6')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 7), ('RIGHTPADDING', (0, 0), (-1, -1), 7),
-            ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-        ]))
-        story.append(table)
-        if index < len(included) - 1:
-            story.append(PageBreak())
+            ('LEFTPADDING', (0, 0), (-1, -1), 5), ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 3.5), ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+            ('TOPPADDING', (0, 0), (-1, 0), 5), ('BOTTOMPADDING', (0, 0), (-1, 0), 5),
+        ]
+        for row_index in range(1, len(rows)):
+            if row_index % 2 == 0:
+                row_styles.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor('#f4f6fa')))
+            else:
+                row_styles.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.white))
+        block.setStyle(TableStyle(row_styles))
+        story.append(KeepTogether([block, Spacer(1, 0.3 * cm)]))
+
     document.build(story)
 def seed_data():
     if not User.query.first():

@@ -1,15 +1,116 @@
 {% extends 'base.html' %}
 {% block title %}مدیریت داخلی‌ها{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4"><div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">داخلی‌های هتل</h1></div><a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی</a></div>
-<div class="row g-4 mb-4">
-  <div class="col-lg-7"><div class="panel h-100"><h5>ایمپورت اطلاعات</h5><p class="text-muted small">فایل CSV یا Excel با ستون‌های استاندارد؛ شماره داخلی‌های موجود به‌روزرسانی می‌شوند.</p><form action="{{ url_for('import_data') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2"><input type="file" class="form-control" name="file" accept=".csv,.xlsx" required><button class="btn btn-outline-primary text-nowrap">بارگذاری</button></form></div></div>
-  <div class="col-lg-5"><div class="panel h-100"><h5>خروجی گرفتن</h5><p class="text-muted small">نسخه پشتیبان یا فایل قابل ویرایش دریافت کنید.</p><a class="btn btn-outline-success btn-sm" href="{{ url_for('export_data', fmt='xlsx') }}">Excel</a> <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_data', fmt='csv') }}">CSV</a><hr><h6>گزارش PDF تفکیک‌شده</h6><p class="text-muted small mb-2">برای هر بخش یک جدول مستقل در PDF ساخته می‌شود.</p><form action="{{ url_for('export_pdf') }}" method="get" class="d-flex gap-2"><select name="department_id" class="form-select form-select-sm"><option value="">همه بخش‌ها</option>{% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select><button class="btn btn-outline-danger btn-sm text-nowrap">دانلود PDF</button></form></div></div>
-  <div class="col-lg-6"><div class="panel h-100"><h5>افزودن بخش</h5><form action="{{ url_for('create_department') }}" method="post" class="d-flex gap-2"><input name="name" class="form-control" placeholder="مثلاً کافی‌شاپ" required><button class="btn btn-outline-primary text-nowrap">افزودن</button></form></div></div>
-  <div class="col-lg-6"><div class="panel h-100 border-danger-subtle"><h5 class="text-danger">پاک‌سازی همه داخلی‌ها</h5><p class="text-muted small">این کار قابل بازگردانی نیست. ابتدا از داده‌ها خروجی بگیرید.</p><form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" onsubmit="return confirm('همه داخلی‌ها برای همیشه پاک شوند؟')"><input name="confirmation" class="form-control" placeholder="برای تأیید بنویسید: پاک کن" required><button class="btn btn-danger text-nowrap">پاک‌سازی</button></form></div></div>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">داخلی‌های هتل</h1></div>
+  <a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی جدید</a>
 </div>
-<div class="row g-4 mb-4">
-  <div class="col-12"><div class="panel"><h5 class="mb-3">مدیریت بخش‌ها</h5>{% if departments %}<div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>نام بخش</th><th>تعداد داخلی‌ها</th><th></th></tr></thead><tbody>{% for d in departments %}<tr><td><form id="department-{{ d.id }}" action="{{ url_for('edit_department', department_id=d.id) }}" method="post"><input name="name" value="{{ d.name }}" class="form-control form-control-sm"></form></td><td>{{ d.extension_entries|length }}</td><td class="text-nowrap"><button form="department-{{ d.id }}" class="btn btn-sm btn-light">ذخیره</button><form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" onsubmit="return confirm('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.')"><button class="btn btn-sm btn-outline-danger">حذف</button></form></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">بخشی ثبت نشده است.</p>{% endif %}</div></div>
+
+<div class="admin-actions-grid mb-4">
+
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">⇪</span><h6>ایمپورت اطلاعات</h6></div>
+    <p class="action-desc">فایل CSV یا Excel با ستون‌های استاندارد؛ داخلی‌های موجود به‌روزرسانی می‌شوند.</p>
+    <form action="{{ url_for('import_data') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2">
+      <input type="file" class="form-control form-control-sm" name="file" accept=".csv,.xlsx" required>
+      <button class="btn btn-outline-primary btn-sm text-nowrap">بارگذاری</button>
+    </form>
+  </div>
+
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">⇩</span><h6>خروجی گرفتن</h6></div>
+    <p class="action-desc">نسخه پشتیبان یا فایل قابل ویرایش دریافت کنید.</p>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_data', fmt='xlsx') }}">Excel</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_data', fmt='csv') }}">CSV</a>
+    </div>
+  </div>
+
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">⎙</span><h6>گزارش PDF تفکیک‌شده</h6></div>
+    <p class="action-desc">برای هر بخش یک جدول مستقل در PDF ساخته می‌شود.</p>
+    <form action="{{ url_for('export_pdf') }}" method="get" class="d-flex gap-2">
+      <select name="department_id" class="form-select form-select-sm">
+        <option value="">همه بخش‌ها</option>
+        {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-outline-danger btn-sm text-nowrap">دانلود</button>
+    </form>
+  </div>
+
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">＋</span><h6>افزودن بخش جدید</h6></div>
+    <p class="action-desc">یک واحد یا دپارتمان تازه به فهرست بخش‌ها اضافه کنید.</p>
+    <form action="{{ url_for('create_department') }}" method="post" class="d-flex gap-2">
+      <input name="name" class="form-control form-control-sm" placeholder="مثلاً کافی‌شاپ" required>
+      <button class="btn btn-outline-primary btn-sm text-nowrap">افزودن</button>
+    </form>
+  </div>
+
+  <div class="action-card action-card-danger">
+    <div class="action-card-head"><span class="action-icon">⚠</span><h6>پاک‌سازی همه داخلی‌ها</h6></div>
+    <p class="action-desc">این کار قابل بازگردانی نیست؛ ابتدا از داده‌ها خروجی بگیرید.</p>
+    <form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" onsubmit="return confirm('همه داخلی‌ها برای همیشه پاک شوند؟')">
+      <input name="confirmation" class="form-control form-control-sm" placeholder="بنویسید: پاک کن" required>
+      <button class="btn btn-danger btn-sm text-nowrap">پاک‌سازی</button>
+    </form>
+  </div>
+
 </div>
-<div class="panel p-0 overflow-hidden"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th></th></tr></thead><tbody>{% for e in entries %}<tr><td class="fw-bold text-primary">{{ e.extension }}</td><td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td><td>{{ e.department.name if e.department else '—' }}</td><td>{{ e.location or '—' }}</td><td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ 'فعال' if e.is_active else 'غیرفعال' }}</span></td><td class="text-nowrap"><a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a><form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('از حذف این داخلی مطمئن هستید؟')"><button class="btn btn-sm btn-outline-danger">حذف</button></form></td></tr>{% else %}<tr><td colspan="6" class="text-center py-4 text-muted">هنوز داخلی ثبت نشده است.</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="panel mb-4">
+  <h5 class="mb-3">مدیریت بخش‌ها</h5>
+  {% if departments %}
+    <div class="dept-chip-grid">
+      {% for d in departments %}
+        <div class="dept-chip">
+          <form id="department-{{ d.id }}" action="{{ url_for('edit_department', department_id=d.id) }}" method="post">
+            <input name="name" value="{{ d.name }}" class="form-control form-control-sm dept-chip-input">
+          </form>
+          <div class="dept-chip-meta">
+            <span class="dept-chip-count">{{ d.extension_entries|length }} داخلی</span>
+            <div class="dept-chip-actions">
+              <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="ذخیره">✓</button>
+              <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" onsubmit="return confirm('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.')">
+                <button class="btn btn-sm btn-outline-danger" title="حذف">✕</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-muted mb-0">بخشی ثبت نشده است.</p>
+  {% endif %}
+</div>
+
+<div class="panel p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr><th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td class="fw-bold text-primary">{{ e.extension }}</td>
+          <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
+          <td>{{ e.department.name if e.department else '—' }}</td>
+          <td>{{ e.location or '—' }}</td>
+          <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ 'فعال' if e.is_active else 'غیرفعال' }}</span></td>
+          <td class="text-nowrap">
+            <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a>
+            <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('از حذف این داخلی مطمئن هستید؟')">
+              <button class="btn btn-sm btn-outline-danger">حذف</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center py-4 text-muted">هنوز داخلی ثبت نشده است.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
