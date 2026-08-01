@@ -4,17 +4,20 @@
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">داخلی‌های هتل</h1></div>
-  <a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی جدید</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('activity_log') }}" class="btn btn-outline-secondary">🕒 لاگ فعالیت‌ها</a>
+    <a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی جدید</a>
+  </div>
 </div>
 
 <div class="admin-actions-grid mb-4">
 
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⇪</span><h6>ایمپورت اطلاعات</h6></div>
-    <p class="action-desc">فایل CSV یا Excel با ستون‌های استاندارد؛ داخلی‌های موجود به‌روزرسانی می‌شوند.</p>
-    <form action="{{ url_for('import_data') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2">
+    <p class="action-desc">قبل از ثبت نهایی، پیش‌نمایش تعداد رکوردهای معتبر/تکراری/خطا نمایش داده می‌شود.</p>
+    <form action="{{ url_for('import_preview') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2">
       <input type="file" class="form-control form-control-sm" name="file" accept=".csv,.xlsx" required>
-      <button class="btn btn-outline-primary btn-sm text-nowrap">بارگذاری</button>
+      <button class="btn btn-outline-primary btn-sm text-nowrap">پیش‌نمایش</button>
     </form>
   </div>
 
@@ -42,8 +45,9 @@
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">＋</span><h6>افزودن بخش جدید</h6></div>
     <p class="action-desc">یک واحد یا دپارتمان تازه به فهرست بخش‌ها اضافه کنید.</p>
-    <form action="{{ url_for('create_department') }}" method="post" class="d-flex gap-2">
+    <form action="{{ url_for('create_department') }}" method="post" class="d-flex flex-column gap-2">
       <input name="name" class="form-control form-control-sm" placeholder="مثلاً کافی‌شاپ" required>
+      <input name="working_hours" class="form-control form-control-sm" placeholder="ساعت کاری (مثلاً ۰۸:۰۰ تا ۲۰:۰۰)">
       <button class="btn btn-outline-primary btn-sm text-nowrap">افزودن</button>
     </form>
   </div>
@@ -59,6 +63,26 @@
 
 </div>
 
+{% if import_stats %}
+<div class="import-preview-box mb-4">
+  <div class="import-preview-head">
+    <h6 class="mb-0">پیش‌نمایش ایمپورت — {{ import_filename }}</h6>
+  </div>
+  <div class="import-stat-chips">
+    <span class="chip">کل رکوردها: <strong>{{ import_stats.total }}</strong></span>
+    <span class="chip chip-good">معتبر: <strong>{{ import_stats.valid }}</strong></span>
+    <span class="chip chip-info">رکورد جدید: <strong>{{ import_stats.new_records }}</strong></span>
+    <span class="chip chip-info">به‌روزرسانی موجود: <strong>{{ import_stats.existing_updates }}</strong></span>
+    <span class="chip chip-warn">تکراری در فایل: <strong>{{ import_stats.duplicates }}</strong></span>
+    <span class="chip chip-danger">خطا: <strong>{{ import_stats.errors }}</strong></span>
+  </div>
+  <div class="d-flex gap-2 mt-3">
+    <form action="{{ url_for('import_confirm') }}" method="post"><button class="btn btn-primary btn-sm">تأیید و ثبت نهایی</button></form>
+    <form action="{{ url_for('import_cancel') }}" method="post"><button class="btn btn-outline-secondary btn-sm">انصراف</button></form>
+  </div>
+</div>
+{% endif %}
+
 <div class="panel mb-4">
   <h5 class="mb-3">مدیریت بخش‌ها</h5>
   {% if departments %}
@@ -67,9 +91,10 @@
         <div class="dept-chip">
           <form id="department-{{ d.id }}" action="{{ url_for('edit_department', department_id=d.id) }}" method="post">
             <input name="name" value="{{ d.name }}" class="form-control form-control-sm dept-chip-input">
+            <input name="working_hours" value="{{ d.working_hours or '' }}" class="form-control form-control-sm dept-chip-hours" placeholder="ساعت کاری…">
           </form>
           <div class="dept-chip-meta">
-            <span class="dept-chip-count">{{ d.extension_entries|length }} داخلی</span>
+            <span class="dept-chip-count">{{ dept_icon(d.name) }} {{ d.extension_entries|length }} داخلی</span>
             <div class="dept-chip-actions">
               <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="ذخیره">✓</button>
               <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" onsubmit="return confirm('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.')">
@@ -86,6 +111,14 @@
 </div>
 
 <div class="panel p-0 overflow-hidden">
+  <form method="get" class="admin-search-bar">
+    <div class="input-icon">
+      <span class="input-icon-glyph">⌕</span>
+      <input name="q" value="{{ q }}" class="form-control" placeholder="جست‌وجو در داخلی‌ها (شماره، نام، عنوان، محل)…">
+    </div>
+    <button class="btn btn-primary btn-sm">جست‌وجو</button>
+    {% if q %}<a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">پاک کردن</a>{% endif %}
+  </form>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead>
@@ -96,9 +129,9 @@
         <tr>
           <td class="fw-bold text-primary">{{ e.extension }}</td>
           <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
-          <td>{{ e.department.name if e.department else '—' }}</td>
+          <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
           <td>{{ e.location or '—' }}</td>
-          <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ 'فعال' if e.is_active else 'غیرفعال' }}</span></td>
+          <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span></td>
           <td class="text-nowrap">
             <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a>
             <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('از حذف این داخلی مطمئن هستید؟')">
@@ -107,7 +140,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="text-center py-4 text-muted">هنوز داخلی ثبت نشده است.</td></tr>
+        <tr><td colspan="6" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if q else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

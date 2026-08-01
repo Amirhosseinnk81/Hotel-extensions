@@ -1,11 +1,13 @@
 import csv
+import glob
 import io
 import os
+import uuid
 from datetime import datetime
 
 
 
-from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from openpyxl import Workbook, load_workbook
@@ -19,13 +21,43 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, PageTemplate, Paragraph, Spacer, Table, TableStyle
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
+
+
+def department_icon(name):
+    """Best-effort emoji icon for a department, matched by keyword."""
+    if not name:
+        return '🏢'
+    lowered = name.lower()
+    mapping = [
+        (['فنی', 'it', 'تکنولوژی'], '💻'),
+        (['رستوران', 'غذا', 'آشپز'], '🍽'),
+        (['پذیرش', 'فرانت', 'front'], '🛎'),
+        (['خانه‌داری', 'خانه داری', 'housekeeping'], '🧹'),
+        (['حراست', 'امنیت', 'security'], '🔒'),
+        (['مالی', 'حسابداری', 'finance'], '💰'),
+        (['بازاریابی', 'فروش', 'marketing'], '📣'),
+        (['منابع انسانی', 'hr'], '👥'),
+        (['بهداری', 'درمان', 'health'], '🩺'),
+        (['ورزش', 'باشگاه', 'sport'], '🏋'),
+        (['گل', 'flower'], '💐'),
+        (['لاندری', 'خشکشویی', 'laundry'], '🧺'),
+        (['آرایشگاه', 'سالن زیبایی', 'salon'], '💇'),
+        (['انبار', 'warehouse', 'store'], '📦'),
+        (['مدیریت', 'management'], '🗂'),
+    ]
+    for keywords, icon in mapping:
+        if any(kw in lowered for kw in keywords):
+            return icon
+    return '🏢'
 
 
 class User(UserMixin, db.Model):
@@ -45,6 +77,7 @@ class User(UserMixin, db.Model):
 class Department(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    working_hours = db.Column(db.String(120))
     extension_entries = db.relationship('Extension', backref='department', lazy=True)
 
 
@@ -55,10 +88,93 @@ class Extension(db.Model):
     person_name = db.Column(db.String(150), index=True)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id'), nullable=True, index=True)
     location = db.Column(db.String(150))
+    email = db.Column(db.String(150))
+    mobile = db.Column(db.String(30))
+    is_present = db.Column(db.Boolean, default=False, nullable=False)
     notes = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ActivityLog(db.Model):
+    """Records admin-panel changes only (extensions, departments, imports)."""
+    id = db.Column(db.Integer, primary_key=True)
+    actor = db.Column(db.String(120), nullable=False)
+    action = db.Column(db.String(30), nullable=False)  # created / updated / deleted / imported
+    entity_type = db.Column(db.String(30), nullable=False)  # extension / department
+    entity_label = db.Column(db.String(200), nullable=False)
+    details = db.Column(db.String(300))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+def _ensure_columns(engine):
+    """Lightweight in-place migration: add any columns that a pre-existing
+    SQLite database might be missing, without touching existing rows."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    if 'extension' not in inspector.get_table_names():
+        return
+    existing_ext_cols = {c['name'] for c in inspector.get_columns('extension')}
+    existing_dept_cols = {c['name'] for c in inspector.get_columns('department')} if 'department' in inspector.get_table_names() else set()
+    statements = []
+    if 'email' not in existing_ext_cols:
+        statements.append('ALTER TABLE extension ADD COLUMN email VARCHAR(150)')
+    if 'mobile' not in existing_ext_cols:
+        statements.append('ALTER TABLE extension ADD COLUMN mobile VARCHAR(30)')
+    if 'is_present' not in existing_ext_cols:
+        statements.append('ALTER TABLE extension ADD COLUMN is_present BOOLEAN DEFAULT 0 NOT NULL')
+    if 'working_hours' not in existing_dept_cols:
+        statements.append('ALTER TABLE department ADD COLUMN working_hours VARCHAR(120)')
+    if statements:
+        with engine.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
+
+
+# In-process "data version" counter: bumped on every admin write so the
+# homepage/admin page can poll /api/version and detect changes without a
+# full WebSocket stack. Also used to invalidate the tiny in-memory caches
+# below. Note: this only works within a single process — a multi-worker
+# deployment would need a shared store (e.g. Redis) instead.
+_data_version = 0
+_stats_cache = {'version': -1, 'data': None}
+_departments_cache = {'version': -1, 'data': None}
+
+
+def bump_data_version():
+    global _data_version
+    _data_version += 1
+
+
+def log_activity(action, entity_type, entity_label, details=None):
+    actor = current_user.display_name if getattr(current_user, 'is_authenticated', False) else 'system'
+    db.session.add(ActivityLog(actor=actor, action=action, entity_type=entity_type, entity_label=entity_label, details=details))
+
+
+def get_cached_stats():
+    if _stats_cache['version'] != _data_version:
+        _stats_cache['data'] = {
+            'total_extensions': Extension.query.count(),
+            'total_departments': Department.query.count(),
+            'active_count': Extension.query.filter_by(is_active=True).count(),
+            'inactive_count': Extension.query.filter_by(is_active=False).count(),
+            'last_updated': db.session.query(func.max(Extension.updated_at)).scalar(),
+            'admin_count': User.query.count(),
+        }
+        _stats_cache['version'] = _data_version
+    return _stats_cache['data']
+
+
+def get_cached_departments():
+    """Only safe where callers read plain columns (name/working_hours) —
+    do NOT use this where a lazy relationship like extension_entries is
+    accessed, since the cached objects may be detached from a prior
+    request's session."""
+    if _departments_cache['version'] != _data_version:
+        _departments_cache['data'] = Department.query.order_by(Department.name).all()
+        _departments_cache['version'] = _data_version
+    return _departments_cache['data']
 
 
 def create_app():
@@ -69,9 +185,13 @@ def create_app():
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         MAX_CONTENT_LENGTH=5 * 1024 * 1024,
         PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', r'C:\Windows\Fonts\Tahoma.ttf'),
+        SEND_FILE_MAX_AGE_DEFAULT=1800,  # cache static assets (CSS/JS) in the browser for 30 min
     )
     db.init_app(app)
     login_manager.init_app(app)
+    app.jinja_env.globals['dept_icon'] = department_icon
+    app.jinja_env.globals['data_version'] = lambda: _data_version
+    os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -79,7 +199,12 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _ensure_columns(db.engine)
         seed_data()
+
+    @app.route('/api/version')
+    def api_version():
+        return {'version': _data_version}
 
     @app.route('/')
     def index():
@@ -91,19 +216,60 @@ def create_app():
         if page < 1:
             page = 1
 
+        # advanced search fields
+        ext_q = request.args.get('ext', '').strip()
+        person_q = request.args.get('person', '').strip()
+        title_q = request.args.get('title_q', '').strip()
+        location_q = request.args.get('location_q', '').strip()
+
+        # sorting: value comes in as "field:dir"
+        sort_map = {
+            'extension': Extension.extension,
+            'title': Extension.title,
+            'department': Department.name,
+            'location': Extension.location,
+            'created': Extension.created_at,
+            'updated': Extension.updated_at,
+        }
+        sort_value = request.args.get('sort', 'extension:asc')
+        sort_field, _, sort_dir = sort_value.partition(':')
+        if sort_field not in sort_map:
+            sort_field = 'extension'
+        if sort_dir not in ('asc', 'desc'):
+            sort_dir = 'asc'
+        sort_value = f'{sort_field}:{sort_dir}'
+
         entries = Extension.query
         if query:
             pattern = f'%{query}%'
-            entries = entries.filter(or_(Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern)))
+            conditions = [Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern)]
+            matching_dept_ids = [d.id for d in Department.query.filter(Department.name.ilike(pattern)).all()]
+            if matching_dept_ids:
+                conditions.append(Extension.department_id.in_(matching_dept_ids))
+            entries = entries.filter(or_(*conditions))
         if department_id:
             entries = entries.filter_by(department_id=department_id)
         if status == 'active':
             entries = entries.filter_by(is_active=True)
         elif status == 'inactive':
             entries = entries.filter_by(is_active=False)
-        entries = entries.order_by(Extension.extension)
+        if ext_q:
+            entries = entries.filter(Extension.extension.ilike(f'%{ext_q}%'))
+        if person_q:
+            entries = entries.filter(Extension.person_name.ilike(f'%{person_q}%'))
+        if title_q:
+            entries = entries.filter(Extension.title.ilike(f'%{title_q}%'))
+        if location_q:
+            entries = entries.filter(Extension.location.ilike(f'%{location_q}%'))
+
+        if sort_field == 'department':
+            entries = entries.outerjoin(Department, Extension.department_id == Department.id)
 
         total_count = entries.count()
+
+        sort_column = sort_map[sort_field]
+        entries = entries.order_by(sort_column.desc() if sort_dir == 'desc' else sort_column.asc())
+
         show_all = per_page_raw == 'all'
         allowed_per_page = (20, 50, 100)
         per_page = 20 if show_all else per_page_raw
@@ -120,18 +286,50 @@ def create_app():
             page = min(page, total_pages)
             page_entries = entries.offset((page - 1) * per_page).limit(per_page).all()
 
+        stats = get_cached_stats()
+
         return render_template(
             'index.html',
             entries=page_entries,
-            departments=Department.query.order_by(Department.name).all(),
+            departments=get_cached_departments(),
             query=query,
             selected_department=department_id,
             status=status,
+            ext_q=ext_q,
+            person_q=person_q,
+            title_q=title_q,
+            location_q=location_q,
+            sort_value=sort_value,
             per_page=('all' if show_all else per_page),
             page=page,
             total_pages=total_pages,
             total_count=total_count,
+            stats=stats,
         )
+
+    @app.route('/admin')
+    @login_required
+    def admin():
+        q = request.args.get('q', '').strip()
+        entries_query = Extension.query
+        if q:
+            pattern = f'%{q}%'
+            entries_query = entries_query.filter(or_(Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern)))
+        entries = entries_query.order_by(Extension.extension).all()
+        return render_template(
+            'admin.html',
+            entries=entries,
+            departments=Department.query.order_by(Department.name).all(),
+            q=q,
+            import_stats=session.get('import_stats'),
+            import_filename=session.get('import_original_name'),
+        )
+
+    @app.route('/admin/activity-log')
+    @login_required
+    def activity_log():
+        logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(300).all()
+        return render_template('activity_log.html', logs=logs)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -150,11 +348,6 @@ def create_app():
     def logout():
         logout_user()
         return redirect(url_for('index'))
-
-    @app.route('/admin')
-    @login_required
-    def admin():
-        return render_template('admin.html', entries=Extension.query.order_by(Extension.extension).all(), departments=Department.query.order_by(Department.name).all())
 
     @app.route('/admin/extensions/new', methods=['GET', 'POST'])
     @login_required
@@ -183,15 +376,21 @@ def create_app():
         if duplicate.first():
             flash('این شماره داخلی قبلاً ثبت شده است.', 'danger')
             return redirect(request.url)
+        is_new = entry is None
         entry = entry or Extension()
         entry.extension = extension_no
         entry.title = title
         entry.person_name = request.form.get('person_name', '').strip() or None
         entry.department_id = request.form.get('department_id', type=int) or None
         entry.location = request.form.get('location', '').strip() or None
+        entry.email = request.form.get('email', '').strip() or None
+        entry.mobile = request.form.get('mobile', '').strip() or None
         entry.notes = request.form.get('notes', '').strip() or None
         entry.is_active = request.form.get('is_active') == 'on'
+        entry.is_present = request.form.get('is_present') == 'on'
         db.session.add(entry)
+        log_activity('created' if is_new else 'updated', 'extension', f'{extension_no} — {title}')
+        bump_data_version()
         db.session.commit()
         flash('داخلی با موفقیت ذخیره شد.', 'success')
         return redirect(url_for('admin'))
@@ -199,7 +398,10 @@ def create_app():
     @app.route('/admin/extensions/<int:entry_id>/delete', methods=['POST'])
     @login_required
     def delete_extension(entry_id):
-        db.session.delete(db.get_or_404(Extension, entry_id))
+        entry = db.get_or_404(Extension, entry_id)
+        log_activity('deleted', 'extension', f'{entry.extension} — {entry.title}')
+        db.session.delete(entry)
+        bump_data_version()
         db.session.commit()
         flash('داخلی حذف شد.', 'success')
         return redirect(url_for('admin'))
@@ -211,6 +413,8 @@ def create_app():
             flash('برای پاک‌سازی، عبارت «پاک کن» را دقیق وارد کنید.', 'danger')
             return redirect(url_for('admin'))
         count = Extension.query.delete()
+        log_activity('deleted', 'extension', f'پاک‌سازی گروهی ({count} داخلی)')
+        bump_data_version()
         db.session.commit()
         flash(f'{count} داخلی با موفقیت پاک شد.', 'success')
         return redirect(url_for('admin'))
@@ -219,8 +423,11 @@ def create_app():
     @login_required
     def create_department():
         name = request.form.get('name', '').strip()
+        working_hours = request.form.get('working_hours', '').strip() or None
         if name and not Department.query.filter_by(name=name).first():
-            db.session.add(Department(name=name))
+            db.session.add(Department(name=name, working_hours=working_hours))
+            log_activity('created', 'department', name)
+            bump_data_version()
             db.session.commit()
             flash('بخش جدید افزوده شد.', 'success')
         else:
@@ -232,14 +439,18 @@ def create_app():
     def edit_department(department_id):
         department = db.get_or_404(Department, department_id)
         name = request.form.get('name', '').strip()
+        working_hours = request.form.get('working_hours', '').strip() or None
         if not name:
             flash('نام بخش نمی‌تواند خالی باشد.', 'danger')
         elif Department.query.filter(Department.name == name, Department.id != department.id).first():
             flash('بخشی با این نام از قبل وجود دارد.', 'danger')
         else:
             department.name = name
+            department.working_hours = working_hours
+            log_activity('updated', 'department', name)
+            bump_data_version()
             db.session.commit()
-            flash('نام بخش ویرایش شد.', 'success')
+            flash('بخش ویرایش شد.', 'success')
         return redirect(url_for('admin'))
 
     @app.route('/admin/departments/<int:department_id>/delete', methods=['POST'])
@@ -247,7 +458,9 @@ def create_app():
     def delete_department(department_id):
         department = db.get_or_404(Department, department_id)
         Extension.query.filter_by(department_id=department.id).update({Extension.department_id: None}, synchronize_session=False)
+        log_activity('deleted', 'department', department.name)
         db.session.delete(department)
+        bump_data_version()
         db.session.commit()
         flash('بخش حذف شد؛ داخلی‌های آن بدون بخش باقی مانده‌اند.', 'success')
         return redirect(url_for('admin'))
@@ -255,22 +468,19 @@ def create_app():
     @app.route('/admin/export/<fmt>')
     @login_required
     def export_data(fmt):
-        rows = export_rows()
-        if fmt == 'csv':
-            buffer = io.StringIO()
-            writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()) if rows else export_headers())
-            writer.writeheader(); writer.writerows(rows)
-            return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name='hotel_extensions.csv')
-        if fmt == 'xlsx':
-            wb = Workbook(); ws = wb.active; ws.title = 'Internals'
-            ws.append(export_headers())
-            for row in rows: ws.append(list(row.values()))
-            ws.freeze_panes = 'A2'; ws.auto_filter.ref = ws.dimensions
-            for column in ws.columns:
-                ws.column_dimensions[column[0].column_letter].width = min(max(len(str(c.value or '')) for c in column) + 2, 35)
-            output = io.BytesIO(); wb.save(output); output.seek(0)
-            return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='hotel_extensions.xlsx')
-        return 'فرمت نامعتبر است.', 404
+        response = build_tabular_export(fmt)
+        if response is None:
+            return 'فرمت نامعتبر است.', 404
+        return response
+
+    @app.route('/export/<fmt>')
+    def public_export(fmt):
+        if fmt not in ('csv', 'xlsx'):
+            return 'فرمت نامعتبر است.', 404
+        response = build_tabular_export(fmt)
+        if response is None:
+            return 'فرمت نامعتبر است.', 404
+        return response
 
     @app.route('/export/pdf')
     def public_export_pdf():
@@ -308,31 +518,119 @@ def create_app():
         name = 'hotel_extensions_all_departments.pdf' if not department_id else f'hotel_extensions_department_{department_id}.pdf'
         return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=name)
 
-    @app.route('/admin/import', methods=['POST'])
+    @app.route('/admin/import/preview', methods=['POST'])
     @login_required
-    def import_data():
+    def import_preview():
+        _cleanup_stale_imports()
         file = request.files.get('file')
         if not file or not file.filename:
-            flash('فایلی انتخاب نشده است.', 'danger'); return redirect(url_for('admin'))
+            flash('فایلی انتخاب نشده است.', 'danger')
+            return redirect(url_for('admin'))
         try:
             rows = read_import_file(file)
-            saved = 0
-            for row in rows:
-                extension_no = str(row.get('extension', '')).strip()
-                title = str(row.get('title', '')).strip()
-                if not extension_no or not title: continue
-                department_name = str(row.get('department', '')).strip()
-                department = get_or_create_department(department_name) if department_name else None
-                item = Extension.query.filter_by(extension=extension_no).first() or Extension(extension=extension_no)
-                item.title = title; item.person_name = str(row.get('person_name', '')).strip() or None
-                item.department = department; item.location = str(row.get('location', '')).strip() or None
-                item.notes = str(row.get('notes', '')).strip() or None
-                item.is_active = str(row.get('status', 'فعال')).strip() not in ('غیرفعال', 'inactive', '0', 'False')
-                db.session.add(item); saved += 1
-            db.session.commit()
+        except Exception:
+            flash('فایل قابل خواندن نیست. ستون‌های استاندارد را بررسی کنید.', 'danger')
+            return redirect(url_for('admin'))
+
+        total = len(rows)
+        valid = 0
+        errors = 0
+        duplicates_in_file = 0
+        existing_updates = 0
+        seen_in_file = set()
+        for row in rows:
+            extension_no = str(row.get('extension', '')).strip()
+            title = str(row.get('title', '')).strip()
+            if not extension_no or not title:
+                errors += 1
+                continue
+            valid += 1
+            if extension_no in seen_in_file:
+                duplicates_in_file += 1
+            else:
+                seen_in_file.add(extension_no)
+            if Extension.query.filter_by(extension=extension_no).first():
+                existing_updates += 1
+
+        token = uuid.uuid4().hex
+        file_ext = os.path.splitext(file.filename)[1] or '.csv'
+        temp_path = os.path.join(IMPORT_TMP_DIR, f'{token}{file_ext}')
+        file.stream.seek(0)
+        file.save(temp_path)
+
+        session['import_token'] = token
+        session['import_original_name'] = file.filename
+        session['import_stats'] = {
+            'total': total,
+            'valid': valid,
+            'errors': errors,
+            'duplicates': duplicates_in_file,
+            'existing_updates': existing_updates,
+            'new_records': valid - duplicates_in_file - existing_updates,
+        }
+        return redirect(url_for('admin'))
+
+    @app.route('/admin/import/confirm', methods=['POST'])
+    @login_required
+    def import_confirm():
+        token = session.pop('import_token', None)
+        session.pop('import_original_name', None)
+        session.pop('import_stats', None)
+        if not token:
+            flash('پیش‌نمایشی برای تأیید پیدا نشد؛ دوباره فایل را انتخاب کنید.', 'danger')
+            return redirect(url_for('admin'))
+        matches = glob.glob(os.path.join(IMPORT_TMP_DIR, f'{token}.*'))
+        if not matches:
+            flash('فایل موقت پیدا نشد؛ دوباره تلاش کنید.', 'danger')
+            return redirect(url_for('admin'))
+        temp_path = matches[0]
+        try:
+            with open(temp_path, 'rb') as raw_stream:
+                storage = FileStorage(stream=raw_stream, filename=os.path.basename(temp_path))
+                rows = read_import_file(storage)
+                saved = 0
+                for row in rows:
+                    extension_no = str(row.get('extension', '')).strip()
+                    title = str(row.get('title', '')).strip()
+                    if not extension_no or not title:
+                        continue
+                    department_name = str(row.get('department', '')).strip()
+                    department = get_or_create_department(department_name) if department_name else None
+                    item = Extension.query.filter_by(extension=extension_no).first() or Extension(extension=extension_no)
+                    item.title = title
+                    item.person_name = str(row.get('person_name', '')).strip() or None
+                    item.department = department
+                    item.location = str(row.get('location', '')).strip() or None
+                    item.notes = str(row.get('notes', '')).strip() or None
+                    item.is_active = str(row.get('status', 'فعال')).strip() not in ('غیرفعال', 'inactive', '0', 'False')
+                    db.session.add(item)
+                    saved += 1
+                log_activity('imported', 'extension', f'ایمپورت فایل ({saved} رکورد)', details=os.path.basename(matches[0]))
+                bump_data_version()
+                db.session.commit()
             flash(f'{saved} داخلی با موفقیت وارد یا به‌روزرسانی شد.', 'success')
         except Exception:
-            db.session.rollback(); flash('فایل قابل خواندن نیست. ستون‌های استاندارد را بررسی کنید.', 'danger')
+            db.session.rollback()
+            flash('فایل قابل خواندن نیست. ستون‌های استاندارد را بررسی کنید.', 'danger')
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        return redirect(url_for('admin'))
+
+    @app.route('/admin/import/cancel', methods=['POST'])
+    @login_required
+    def import_cancel():
+        token = session.pop('import_token', None)
+        session.pop('import_original_name', None)
+        session.pop('import_stats', None)
+        if token:
+            for path in glob.glob(os.path.join(IMPORT_TMP_DIR, f'{token}.*')):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         return redirect(url_for('admin'))
 
     return app
@@ -341,6 +639,42 @@ def create_app():
 def export_headers(): return ['extension', 'title', 'person_name', 'department', 'location', 'notes', 'status']
 def export_rows():
     return [{'extension': e.extension, 'title': e.title, 'person_name': e.person_name or '', 'department': e.department.name if e.department else '', 'location': e.location or '', 'notes': e.notes or '', 'status': 'فعال' if e.is_active else 'غیرفعال'} for e in Extension.query.order_by(Extension.extension).all()]
+
+
+def build_tabular_export(fmt):
+    """Build a CSV/XLSX send_file response for the full extension list, or None for an unknown format."""
+    rows = export_rows()
+    if fmt == 'csv':
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()) if rows else export_headers())
+        writer.writeheader(); writer.writerows(rows)
+        return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name='hotel_extensions.csv')
+    if fmt == 'xlsx':
+        wb = Workbook(); ws = wb.active; ws.title = 'Internals'
+        ws.append(export_headers())
+        for row in rows: ws.append(list(row.values()))
+        ws.freeze_panes = 'A2'; ws.auto_filter.ref = ws.dimensions
+        for column in ws.columns:
+            ws.column_dimensions[column[0].column_letter].width = min(max(len(str(c.value or '')) for c in column) + 2, 35)
+        output = io.BytesIO(); wb.save(output); output.seek(0)
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='hotel_extensions.xlsx')
+    return None
+
+
+def _cleanup_stale_imports(max_age_seconds=3600):
+    """Remove leftover temp import files from abandoned preview sessions."""
+    try:
+        now = datetime.utcnow().timestamp()
+        for path in glob.glob(os.path.join(IMPORT_TMP_DIR, '*')):
+            try:
+                if now - os.path.getmtime(path) > max_age_seconds:
+                    os.remove(path)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 def get_or_create_department(name):
     item = Department.query.filter_by(name=name).first()
     if not item: item = Department(name=name); db.session.add(item)

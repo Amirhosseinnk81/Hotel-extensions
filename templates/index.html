@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<section class="hero mb-4">
+<section class="hero mb-4 no-print">
   <div>
     <p class="eyebrow">دفترچه ارتباطات هتل آراز</p>
     <h1>داخلی مورد نظرتان را سریع پیدا کنید</h1>
@@ -10,70 +10,162 @@
   <div class="hero-icon">☎</div>
 </section>
 
-<form class="search-card mb-4" method="get">
-  <div class="row g-2 align-items-center">
-    <div class="col-lg-4">
-      <div class="input-icon">
-        <span class="input-icon-glyph">⌕</span>
-        <input name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…">
+<div class="dashboard-stats mb-4 no-print">
+  <div class="stat-card"><span class="stat-icon">☎</span><strong>{{ stats.total_extensions }}</strong><small>کل داخلی‌ها</small></div>
+  <div class="stat-card"><span class="stat-icon">🏢</span><strong>{{ stats.total_departments }}</strong><small>بخش‌ها</small></div>
+  <div class="stat-card"><span class="stat-icon">🟢</span><strong>{{ stats.active_count }}</strong><small>فعال</small></div>
+  <div class="stat-card"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>غیرفعال</small></div>
+  <div class="stat-card">
+    <span class="stat-icon">🕒</span>
+    <strong class="stat-date">{{ stats.last_updated.strftime('%Y/%m/%d') if stats.last_updated else '—' }}</strong>
+    <small>آخرین به‌روزرسانی</small>
+  </div>
+  <div class="stat-card"><span class="stat-icon">👤</span><strong>{{ stats.admin_count }}</strong><small>کاربر مدیر</small></div>
+</div>
+
+<div class="sticky-search no-print">
+  <form class="search-card mb-2" method="get">
+    <div class="row g-2 align-items-center">
+      <div class="col-lg-3">
+        <div class="input-icon">
+          <span class="input-icon-glyph">⌕</span>
+          <input name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…">
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <select name="department" class="form-select form-select-lg">
+          <option value="">همه بخش‌ها</option>
+          {% for d in departments %}
+            <option value="{{ d.id }}" {% if d.id == selected_department %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-lg-2">
+        <select name="status" class="form-select form-select-lg">
+          <option value="">همه وضعیت‌ها</option>
+          <option value="active" {% if status == 'active' %}selected{% endif %}>🟢 فعال</option>
+          <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>🔴 غیرفعال</option>
+        </select>
+      </div>
+      <div class="col-6 col-lg-2">
+        <select name="sort" class="form-select form-select-lg" onchange="this.form.submit()">
+          <optgroup label="شماره داخلی">
+            <option value="extension:asc" {% if sort_value=='extension:asc' %}selected{% endif %}>صعودی</option>
+            <option value="extension:desc" {% if sort_value=='extension:desc' %}selected{% endif %}>نزولی</option>
+          </optgroup>
+          <optgroup label="عنوان">
+            <option value="title:asc" {% if sort_value=='title:asc' %}selected{% endif %}>الف تا ی</option>
+            <option value="title:desc" {% if sort_value=='title:desc' %}selected{% endif %}>ی تا الف</option>
+          </optgroup>
+          <optgroup label="بخش">
+            <option value="department:asc" {% if sort_value=='department:asc' %}selected{% endif %}>الف تا ی</option>
+            <option value="department:desc" {% if sort_value=='department:desc' %}selected{% endif %}>ی تا الف</option>
+          </optgroup>
+          <optgroup label="محل">
+            <option value="location:asc" {% if sort_value=='location:asc' %}selected{% endif %}>الف تا ی</option>
+            <option value="location:desc" {% if sort_value=='location:desc' %}selected{% endif %}>ی تا الف</option>
+          </optgroup>
+          <optgroup label="تاریخ ثبت">
+            <option value="created:desc" {% if sort_value=='created:desc' %}selected{% endif %}>جدیدترین</option>
+            <option value="created:asc" {% if sort_value=='created:asc' %}selected{% endif %}>قدیمی‌ترین</option>
+          </optgroup>
+          <optgroup label="آخرین به‌روزرسانی">
+            <option value="updated:desc" {% if sort_value=='updated:desc' %}selected{% endif %}>جدیدترین</option>
+            <option value="updated:asc" {% if sort_value=='updated:asc' %}selected{% endif %}>قدیمی‌ترین</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="col-6 col-lg-2">
+        <select name="per_page" class="form-select form-select-lg" onchange="this.form.submit()">
+          <option value="20" {% if per_page == 20 %}selected{% endif %}>۲۰ مورد</option>
+          <option value="50" {% if per_page == 50 %}selected{% endif %}>۵۰ مورد</option>
+          <option value="100" {% if per_page == 100 %}selected{% endif %}>۱۰۰ مورد</option>
+          <option value="all" {% if per_page == 'all' %}selected{% endif %}>همه موارد</option>
+        </select>
+      </div>
+      <div class="col-6 col-lg-1">
+        <button class="btn btn-primary btn-lg w-100">جست‌وجو</button>
       </div>
     </div>
-    <div class="col-6 col-lg-3">
-      <select name="department" class="form-select form-select-lg">
-        <option value="">همه بخش‌ها</option>
-        {% for d in departments %}
-          <option value="{{ d.id }}" {% if d.id == selected_department %}selected{% endif %}>{{ d.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-6 col-lg-2">
-      <select name="status" class="form-select form-select-lg">
-        <option value="">همه وضعیت‌ها</option>
-        <option value="active" {% if status == 'active' %}selected{% endif %}>فعال</option>
-        <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>غیرفعال</option>
-      </select>
-    </div>
-    <div class="col-6 col-lg-2">
-      <select name="per_page" class="form-select form-select-lg" onchange="this.form.submit()">
-        <option value="20" {% if per_page == 20 %}selected{% endif %}>۲۰ مورد</option>
-        <option value="50" {% if per_page == 50 %}selected{% endif %}>۵۰ مورد</option>
-        <option value="100" {% if per_page == 100 %}selected{% endif %}>۱۰۰ مورد</option>
-        <option value="all" {% if per_page == 'all' %}selected{% endif %}>همه موارد</option>
-      </select>
-    </div>
-    <div class="col-6 col-lg-1">
-      <button class="btn btn-primary btn-lg w-100">جست‌وجو</button>
-    </div>
-  </div>
-</form>
 
-<div class="results-bar mb-3">
+    <div class="advanced-toggle-row">
+      <button class="advanced-toggle-btn" type="button" data-bs-toggle="collapse" data-bs-target="#advancedSearch">
+        جست‌وجوی پیشرفته ▾
+      </button>
+      <label class="fav-filter-label">
+        <input type="checkbox" id="onlyFavCheckbox"> فقط علاقه‌مندی‌ها ⭐
+      </label>
+    </div>
+
+    <div class="collapse {% if ext_q or person_q or title_q or location_q %}show{% endif %}" id="advancedSearch">
+      <div class="advanced-search-panel row g-2 mt-1">
+        <div class="col-6 col-lg-3">
+          <input name="ext" value="{{ ext_q }}" class="form-control" placeholder="شماره داخلی">
+        </div>
+        <div class="col-6 col-lg-3">
+          <input name="person" value="{{ person_q }}" class="form-control" placeholder="نام شخص">
+        </div>
+        <div class="col-6 col-lg-3">
+          <input name="title_q" value="{{ title_q }}" class="form-control" placeholder="عنوان شغلی">
+        </div>
+        <div class="col-6 col-lg-3">
+          <input name="location_q" value="{{ location_q }}" class="form-control" placeholder="محل استقرار">
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="results-bar mb-3 no-print">
   <div>
     <h5 class="mb-0">{{ total_count }} داخلی یافت شد</h5>
     {% if per_page != 'all' and total_pages > 1 %}
       <span class="results-page-info">صفحه {{ page }} از {{ total_pages }}</span>
     {% endif %}
   </div>
-  <a class="btn-pdf" href="{{ url_for('public_export_pdf') }}">
-    <span class="btn-pdf-icon">⬇</span>
-    <span>دانلود PDF لیست کامل</span>
-  </a>
+  <div class="export-bar">
+    <a class="btn-export" href="{{ url_for('public_export_pdf') }}"><span class="btn-export-icon">📄</span><span>PDF</span></a>
+    <a class="btn-export" href="{{ url_for('public_export', fmt='xlsx') }}"><span class="btn-export-icon">📊</span><span>Excel</span></a>
+    <a class="btn-export" href="{{ url_for('public_export', fmt='csv') }}"><span class="btn-export-icon">📑</span><span>CSV</span></a>
+    <button type="button" class="btn-export btn-print"><span class="btn-export-icon">🖨</span><span>چاپ</span></button>
+  </div>
 </div>
 
 <div class="row g-3">
   {% for e in entries %}
-    <div class="col-sm-6 col-lg-4 col-xxl-3">
-      <article class="extension-card h-100">
+    <div class="col-sm-6 col-lg-4 col-xxl-3" data-card-wrapper>
+      <article class="extension-card h-100" data-ext="{{ e.extension }}"
+        data-extension="{{ e.extension }}"
+        data-title="{{ e.title }}"
+        data-person="{{ e.person_name or '—' }}"
+        data-department="{{ e.department.name if e.department else 'بدون بخش' }}"
+        data-location="{{ e.location or '—' }}"
+        data-email="{{ e.email or '—' }}"
+        data-mobile="{{ e.mobile or '—' }}"
+        data-hours="{{ e.department.working_hours if e.department and e.department.working_hours else 'ثبت نشده' }}"
+        data-notes="{{ e.notes or '—' }}"
+        data-created="{{ e.created_at.strftime('%Y/%m/%d %H:%M') }}"
+        data-updated="{{ e.updated_at.strftime('%Y/%m/%d %H:%M') }}"
+        data-present="{{ '1' if e.is_present else '0' }}"
+        role="button" tabindex="0">
+        <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="افزودن به علاقه‌مندی‌ها">☆</button>
         <div class="d-flex justify-content-between align-items-start">
           <div>
-            <span class="department-tag">{{ e.department.name if e.department else 'بدون بخش' }}</span>
+            <span class="department-tag">{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else 'بدون بخش' }}</span>
             <h3>{{ e.title }}</h3>
             {% if e.person_name %}<p class="person-name">{{ e.person_name }}</p>{% endif %}
           </div>
-          <span class="status-dot {{ '' if e.is_active else 'off' }}" title="{{ 'فعال' if e.is_active else 'غیرفعال' }}"></span>
+          <div class="d-flex flex-column align-items-end gap-1">
+            <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span>
+            <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ '🟢 حاضر' if e.is_present else '🔴 خارج از شیفت' }}</span>
+          </div>
         </div>
-        <div class="extension-number">{{ e.extension }}</div>
+        <div class="extension-number-row">
+          <div class="extension-number">{{ e.extension }}</div>
+          <button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره">📋</button>
+        </div>
         {% if e.location %}<small class="location-line">⌖ {{ e.location }}</small>{% endif %}
+        {% if e.department and e.department.working_hours %}<small class="hours-line">🕒 {{ e.department.working_hours }}</small>{% endif %}
         {% if e.notes %}<p class="notes">{{ e.notes }}</p>{% endif %}
       </article>
     </div>
@@ -84,7 +176,7 @@
 
 {% if per_page != 'all' and total_pages > 1 %}
   {% set base_args = request.args.to_dict() %}
-  <nav class="pagination-bar mt-4" aria-label="صفحه‌بندی">
+  <nav class="pagination-bar mt-4 no-print" aria-label="صفحه‌بندی">
     <ul class="pagination justify-content-center">
       <li class="page-item {{ 'disabled' if page <= 1 }}">
         <a class="page-link" href="{{ url_for('index', **dict(base_args, page=page-1)) }}">قبلی</a>
@@ -104,5 +196,29 @@
     </ul>
   </nav>
 {% endif %}
+
+<div class="modal fade no-print" id="extensionDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content detail-modal">
+      <div class="modal-header">
+        <h5 class="modal-title">جزئیات داخلی <span data-field="extension"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-row"><span>عنوان</span><strong data-field="title"></strong></div>
+        <div class="detail-row"><span>نام مسئول</span><strong data-field="person"></strong></div>
+        <div class="detail-row"><span>بخش</span><strong data-field="department"></strong></div>
+        <div class="detail-row"><span>محل استقرار</span><strong data-field="location"></strong></div>
+        <div class="detail-row"><span>ایمیل</span><strong data-field="email"></strong></div>
+        <div class="detail-row"><span>موبایل سازمانی</span><strong data-field="mobile"></strong></div>
+        <div class="detail-row"><span>ساعات کاری بخش</span><strong data-field="hours"></strong></div>
+        <div class="detail-row"><span>وضعیت حضور</span><strong data-field="presence"></strong></div>
+        <div class="detail-row"><span>توضیحات</span><strong data-field="notes"></strong></div>
+        <div class="detail-row"><span>تاریخ ایجاد</span><strong data-field="created"></strong></div>
+        <div class="detail-row"><span>تاریخ ویرایش</span><strong data-field="updated"></strong></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}

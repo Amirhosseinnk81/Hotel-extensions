@@ -1,1 +1,66 @@
-{% extends 'base.html' %}{% block title %}{{ 'ویرایش' if entry else 'افزودن' }} داخلی{% endblock %}{% block content %}<div class="form-page"><a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a><h1 class="h2 mt-3">{{ 'ویرایش' if entry else 'ثبت' }} داخلی</h1><form method="post" class="panel mt-4"><div class="row g-3"><div class="col-md-4"><label class="form-label">شماره داخلی *</label><input name="extension" value="{{ entry.extension if entry else '' }}" class="form-control" required></div><div class="col-md-8"><label class="form-label">عنوان / سمت *</label><input name="title" value="{{ entry.title if entry else '' }}" class="form-control" placeholder="مثلاً پذیرش اصلی" required></div><div class="col-md-6"><label class="form-label">نام مسئول</label><input name="person_name" value="{{ entry.person_name if entry and entry.person_name else '' }}" class="form-control"></div><div class="col-md-6"><label class="form-label">بخش</label><select name="department_id" class="form-select"><option value="">انتخاب نشده</option>{% for d in departments %}<option value="{{ d.id }}" {% if entry and entry.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div><div class="col-md-6"><label class="form-label">محل استقرار</label><input name="location" value="{{ entry.location if entry and entry.location else '' }}" class="form-control" placeholder="لابی، طبقه ۲، …"></div><div class="col-md-6 d-flex align-items-end"><div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_active" id="active" {% if not entry or entry.is_active %}checked{% endif %}><label class="form-check-label" for="active">داخلی فعال است</label></div></div><div class="col-12"><label class="form-label">یادداشت</label><textarea name="notes" class="form-control" rows="3">{{ entry.notes if entry and entry.notes else '' }}</textarea></div><div class="col-12 mt-4"><button class="btn btn-primary px-4">ذخیره اطلاعات</button><a href="{{ url_for('admin') }}" class="btn btn-light">انصراف</a></div></div></form></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}{{ 'ویرایش' if entry else 'افزودن' }} داخلی{% endblock %}
+{% block content %}
+<div class="form-page">
+  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+  <h1 class="h2 mt-3">{{ 'ویرایش' if entry else 'ثبت' }} داخلی</h1>
+  <form method="post" class="panel mt-4">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">شماره داخلی *</label>
+        <input name="extension" value="{{ entry.extension if entry else '' }}" class="form-control" required>
+      </div>
+      <div class="col-md-8">
+        <label class="form-label">عنوان / سمت *</label>
+        <input name="title" value="{{ entry.title if entry else '' }}" class="form-control" placeholder="مثلاً پذیرش اصلی" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">نام مسئول</label>
+        <input name="person_name" value="{{ entry.person_name if entry and entry.person_name else '' }}" class="form-control">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">بخش</label>
+        <select name="department_id" class="form-select">
+          <option value="">انتخاب نشده</option>
+          {% for d in departments %}
+            <option value="{{ d.id }}" {% if entry and entry.department_id == d.id %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">محل استقرار</label>
+        <input name="location" value="{{ entry.location if entry and entry.location else '' }}" class="form-control" placeholder="لابی، طبقه ۲، …">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">ایمیل</label>
+        <input type="email" name="email" value="{{ entry.email if entry and entry.email else '' }}" class="form-control" placeholder="name@arazhotels.com">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">موبایل سازمانی</label>
+        <input name="mobile" value="{{ entry.mobile if entry and entry.mobile else '' }}" class="form-control" placeholder="09xxxxxxxxx" dir="ltr">
+      </div>
+      <div class="col-md-6 d-flex align-items-center gap-4">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" name="is_active" id="active" {% if not entry or entry.is_active %}checked{% endif %}>
+          <label class="form-check-label" for="active">داخلی فعال است</label>
+        </div>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" name="is_present" id="present" {% if entry and entry.is_present %}checked{% endif %}>
+          <label class="form-check-label" for="present">هم‌اکنون حاضر است</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">یادداشت</label>
+        <textarea name="notes" class="form-control" rows="3">{{ entry.notes if entry and entry.notes else '' }}</textarea>
+      </div>
+      <div class="col-12 mt-2">
+        <small class="text-muted">فیلد «حضور» فعلاً به‌صورت دستی تنظیم می‌شود و آماده اتصال به سیستم حضور و غیاب در آینده است.</small>
+      </div>
+      <div class="col-12 mt-3">
+        <button class="btn btn-primary px-4">ذخیره اطلاعات</button>
+        <a href="{{ url_for('admin') }}" class="btn btn-light">انصراف</a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
