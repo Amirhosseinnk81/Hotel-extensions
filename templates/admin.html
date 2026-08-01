@@ -2,12 +2,25 @@
 {% block title %}مدیریت داخلی‌ها{% endblock %}
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
   <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">داخلی‌های هتل</h1></div>
   <div class="d-flex gap-2">
     <a href="{{ url_for('activity_log') }}" class="btn btn-outline-secondary">🕒 لاگ فعالیت‌ها</a>
     <a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی جدید</a>
   </div>
+</div>
+
+<div class="dashboard-stats mb-4">
+  <div class="stat-card"><span class="stat-icon">☎</span><strong>{{ stats.total_extensions }}</strong><small>کل داخلی‌ها</small></div>
+  <div class="stat-card"><span class="stat-icon">🏢</span><strong>{{ stats.total_departments }}</strong><small>بخش‌ها</small></div>
+  <div class="stat-card"><span class="stat-icon">🟢</span><strong>{{ stats.active_count }}</strong><small>فعال</small></div>
+  <div class="stat-card"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>غیرفعال</small></div>
+  <div class="stat-card">
+    <span class="stat-icon">🕒</span>
+    <strong class="stat-date">{{ stats.last_updated.strftime('%Y/%m/%d') if stats.last_updated else '—' }}</strong>
+    <small>آخرین به‌روزرسانی</small>
+  </div>
+  <div class="stat-card"><span class="stat-icon">👤</span><strong>{{ stats.admin_count }}</strong><small>کاربر مدیر</small></div>
 </div>
 
 <div class="admin-actions-grid mb-4">

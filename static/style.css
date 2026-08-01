@@ -134,6 +134,7 @@ body{
 .form-control:focus,.form-select:focus{box-shadow:0 0 0 .2rem #c9a24b2b;border-color:var(--gold)}
 .btn-primary{background:var(--navy);border-color:var(--navy);font-weight:600}
 .btn-primary:hover{background:var(--navy-soft);border-color:var(--navy-soft)}
+.btn-search{display:flex;align-items:center;justify-content:center;text-align:center}
 
 .advanced-toggle-row{display:flex;align-items:center;justify-content:space-between;margin-top:.6rem;flex-wrap:wrap;gap:.5rem}
 .advanced-toggle-btn{
@@ -188,6 +189,9 @@ body{
 .extension-card h3{font-size:.98rem;font-weight:700;margin:6px 0 2px;color:var(--navy)}
 [data-theme="dark"] .extension-card h3{color:var(--text)}
 .person-name{font-size:.82rem;color:var(--muted);margin:0}
+.card-top-row{gap:.5rem}
+.card-main-info{min-width:0}
+.card-status-col{display:flex;flex-direction:column;align-items:end;gap:.32rem;flex-shrink:0}
 .department-tag{
   font-size:.68rem;
   font-weight:600;
@@ -218,13 +222,14 @@ body{
 .extension-card{cursor:pointer}
 
 .fav-btn{
-  position:absolute;top:.55rem;left:.55rem;
-  border:none;background:transparent;color:#c7cedb;
-  font-size:1.05rem;line-height:1;cursor:pointer;padding:2px;
-  transition:transform .15s ease, color .15s ease;
+  border:1px solid var(--line);background:var(--card-bg);color:#b7bfcc;
+  width:24px;height:24px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.9rem;line-height:1;cursor:pointer;padding:0;flex-shrink:0;
+  transition:transform .15s ease, color .15s ease, border-color .15s ease;
 }
-.fav-btn:hover{transform:scale(1.15)}
-.fav-btn.active{color:var(--gold)}
+.fav-btn:hover{transform:scale(1.12);border-color:var(--gold)}
+.fav-btn.active{color:var(--gold);border-color:var(--gold)}
 .copy-btn{
   border:1px solid var(--line);background:var(--ivory);color:var(--navy-soft);
   font-size:.72rem;border-radius:7px;padding:2px 7px;cursor:pointer;
@@ -232,6 +237,7 @@ body{
 }
 .copy-btn:hover{background:var(--gold-light);color:var(--navy-deep)}
 .copy-btn.copied{background:#2fae6c;color:#fff;border-color:#2fae6c}
+
 
 /* ---------- Pagination ---------- */
 .pagination .page-link{color:var(--navy);border-color:var(--line);font-weight:600;background:var(--card-bg)}

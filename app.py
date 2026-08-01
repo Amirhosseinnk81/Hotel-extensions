@@ -286,8 +286,6 @@ def create_app():
             page = min(page, total_pages)
             page_entries = entries.offset((page - 1) * per_page).limit(per_page).all()
 
-        stats = get_cached_stats()
-
         return render_template(
             'index.html',
             entries=page_entries,
@@ -304,7 +302,6 @@ def create_app():
             page=page,
             total_pages=total_pages,
             total_count=total_count,
-            stats=stats,
         )
 
     @app.route('/admin')
@@ -323,6 +320,7 @@ def create_app():
             q=q,
             import_stats=session.get('import_stats'),
             import_filename=session.get('import_original_name'),
+            stats=get_cached_stats(),
         )
 
     @app.route('/admin/activity-log')
