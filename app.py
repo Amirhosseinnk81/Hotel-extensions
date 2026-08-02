@@ -2,6 +2,7 @@ import csv
 import glob
 import io
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -33,30 +34,36 @@ login_manager.login_view = 'login'
 
 
 def department_icon(name):
-    """Best-effort emoji icon for a department, matched by keyword."""
+    """Best-effort emoji icon for a department, matched by keyword
+    (word-boundary aware, so e.g. the 'IT' keyword won't match inside
+    'Security')."""
     if not name:
         return '🏢'
     lowered = name.lower()
     mapping = [
-        (['فنی', 'it', 'تکنولوژی'], '💻'),
-        (['رستوران', 'غذا', 'آشپز'], '🍽'),
-        (['پذیرش', 'فرانت', 'front'], '🛎'),
+        (['فنی', 'it', 'تکنولوژی', 'information technology'], '💻'),
+        (['engineer', 'engeering', 'مهندسی'], '🛠'),
+        (['رستوران', 'غذا', 'آشپز', 'f&b', 'food', 'beverage'], '🍽'),
+        (['پذیرش', 'فرانت', 'front', 'reception'], '🛎'),
         (['خانه‌داری', 'خانه داری', 'housekeeping'], '🧹'),
         (['حراست', 'امنیت', 'security'], '🔒'),
-        (['مالی', 'حسابداری', 'finance'], '💰'),
+        (['مالی', 'حسابداری', 'finance', 'accounting'], '💰'),
         (['بازاریابی', 'فروش', 'marketing'], '📣'),
-        (['منابع انسانی', 'hr'], '👥'),
-        (['بهداری', 'درمان', 'health'], '🩺'),
-        (['ورزش', 'باشگاه', 'sport'], '🏋'),
+        (['منابع انسانی', 'hr', 'human resources'], '👥'),
+        (['بهداری', 'درمان', 'health', 'clinic'], '🩺'),
+        (['hse', 'safety', 'ایمنی'], '🦺'),
+        (['ورزش', 'باشگاه', 'sport', 'entertainment'], '🎾'),
         (['گل', 'flower'], '💐'),
         (['لاندری', 'خشکشویی', 'laundry'], '🧺'),
         (['آرایشگاه', 'سالن زیبایی', 'salon'], '💇'),
-        (['انبار', 'warehouse', 'store'], '📦'),
+        (['انبار', 'warehouse', 'store', 'stock'], '📦'),
+        (['خرید', 'بازرگانی', 'commerce', 'shopping', 'purchasing'], '🛍'),
         (['مدیریت', 'management'], '🗂'),
     ]
     for keywords, icon in mapping:
-        if any(kw in lowered for kw in keywords):
-            return icon
+        for kw in keywords:
+            if re.search(r'(?<![\w])' + re.escape(kw) + r'(?![\w])', lowered):
+                return icon
     return '🏢'
 
 
