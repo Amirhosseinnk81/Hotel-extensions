@@ -112,8 +112,8 @@
   </div>
   <div class="export-bar">
     <a class="btn-export" href="{{ url_for('public_export_pdf') }}"><span class="btn-export-icon">📄</span><span>PDF</span></a>
-    <a class="btn-export" href="{{ url_for('public_export', fmt='xlsx') }}"><span class="btn-export-icon">📊</span><span>Excel</span></a>
-    <a class="btn-export" href="{{ url_for('public_export', fmt='csv') }}"><span class="btn-export-icon">📑</span><span>CSV</span></a>
+    <!-- <a class="btn-export" href="{{ url_for('public_export', fmt='xlsx') }}"><span class="btn-export-icon">📊</span><span>Excel</span></a> -->
+    <!-- <a class="btn-export" href="{{ url_for('public_export', fmt='csv') }}"><span class="btn-export-icon">📑</span><span>CSV</span></a> -->
     <button type="button" class="btn-export btn-print"><span class="btn-export-icon">🖨</span><span>چاپ</span></button>
   </div>
 </div>
@@ -144,7 +144,7 @@
           <div class="card-status-col">
             <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="افزودن به علاقه‌مندی‌ها">☆</button>
             <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span>
-            <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ '🟢 حاضر' if e.is_present else '🔴 خارج از شیفت' }}</span>
+            <!-- <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ '🟢 حاضر' if e.is_present else '🔴 خارج از شیفت' }}</span> -->
           </div>
         </div>
         <div class="extension-number-row">
