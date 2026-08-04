@@ -698,9 +698,11 @@ def pdf_text(value):
 
 
 def build_extensions_pdf(output, departments, font_path):
-    """Compact two-column landscape report: black title bar + one small
-    table per department (department name as a header band, then
-    title/extension rows), flowing departments through two columns."""
+    """Compact two-column landscape report: black title bar, then a
+    continuous table per column where each department's name is a single
+    cell merged (spanned) vertically alongside all of its own rows, and
+    the next department starts immediately after — no header band, no
+    gap between blocks, to save paper when printed."""
     font_name = 'TahomaPDF'
     try:
         pdfmetrics.getFont(font_name)
@@ -723,6 +725,9 @@ def build_extensions_pdf(output, departments, font_path):
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('PersianTitle', parent=styles['Title'], fontName=font_name, fontSize=13, leading=18, alignment=TA_CENTER, textColor=colors.white)
     empty_style = ParagraphStyle('PersianEmpty', parent=styles['Normal'], fontName=font_name, fontSize=10, alignment=TA_RIGHT, textColor=colors.HexColor('#6b7686'))
+    dept_style = ParagraphStyle('DeptCell', parent=styles['Normal'], fontName=font_name, fontSize=9.3, leading=12, alignment=TA_CENTER, textColor=colors.HexColor('#12263f'))
+    cell_style = ParagraphStyle('PersianCell', parent=styles['Normal'], fontName=font_name, fontSize=8.3, leading=12, alignment=TA_RIGHT)
+    cell_style_num = ParagraphStyle('PersianCellNum', parent=cell_style, alignment=TA_CENTER)
 
     story = []
     title_table = Table([[Paragraph(pdf_text('لیست داخلی‌های هتل آراز'), title_style)]], colWidths=[col_width])
@@ -731,42 +736,39 @@ def build_extensions_pdf(output, departments, font_path):
         ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
     ]))
     story.append(title_table)
-    story.append(Spacer(1, 0.4 * cm))
+    story.append(Spacer(1, 0.3 * cm))
 
     included = [d for d in departments if d.extension_entries]
     if not included:
         story.append(Paragraph(pdf_text('هیچ داخلی‌ای برای بخش انتخاب‌شده ثبت نشده است.'), empty_style))
 
-    dept_header_style = ParagraphStyle('DeptHeader', parent=styles['Normal'], fontName=font_name, fontSize=10, leading=14, alignment=TA_CENTER, textColor=colors.white)
-    cell_style = ParagraphStyle('PersianCell', parent=styles['Normal'], fontName=font_name, fontSize=8.3, leading=12, alignment=TA_RIGHT)
-    cell_style_num = ParagraphStyle('PersianCellNum', parent=cell_style, alignment=TA_CENTER)
+    dept_col_w = col_width * 0.30
+    title_col_w = col_width * 0.46
+    ext_col_w = col_width * 0.24
 
     for department in included:
         entries = sorted(department.extension_entries, key=lambda item: item.extension)
-        rows = [[Paragraph(pdf_text(department.name), dept_header_style), '']]
-        for entry in entries:
-            rows.append([
-                Paragraph(pdf_text(entry.title), cell_style),
-                Paragraph(pdf_text(entry.extension), cell_style_num),
-            ])
-        block = Table(rows, colWidths=[col_width * 0.68, col_width * 0.32])
-        row_styles = [
-            ('SPAN', (0, 0), (-1, 0)),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d2340')),
+        n = len(entries)
+        rows = []
+        for i, entry in enumerate(entries):
+            dept_cell = Paragraph(pdf_text(department.name), dept_style) if i == 0 else ''
+            rows.append([dept_cell, Paragraph(pdf_text(entry.title), cell_style), Paragraph(pdf_text(entry.extension), cell_style_num)])
+        block = Table(rows, colWidths=[dept_col_w, title_col_w, ext_col_w])
+        style_cmds = [
+            ('SPAN', (0, 0), (0, n - 1)),
+            ('BACKGROUND', (0, 0), (0, n - 1), colors.HexColor('#eef1f6')),
+            ('VALIGN', (0, 0), (0, n - 1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (-1, -1), font_name),
-            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#dcdfe6')),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#c7cdd8')),
+            ('VALIGN', (1, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 5), ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 0), (-1, -1), 3.5), ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-            ('TOPPADDING', (0, 0), (-1, 0), 5), ('BOTTOMPADDING', (0, 0), (-1, 0), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 3.2), ('BOTTOMPADDING', (0, 0), (-1, -1), 3.2),
         ]
-        for row_index in range(1, len(rows)):
-            if row_index % 2 == 0:
-                row_styles.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor('#f4f6fa')))
-            else:
-                row_styles.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.white))
-        block.setStyle(TableStyle(row_styles))
-        story.append(KeepTogether([block, Spacer(1, 0.3 * cm)]))
+        for row_index in range(n):
+            bg = colors.white if row_index % 2 == 0 else colors.HexColor('#f6f8fb')
+            style_cmds.append(('BACKGROUND', (1, row_index), (2, row_index), bg))
+        block.setStyle(TableStyle(style_cmds))
+        story.append(KeepTogether([block]))
 
     document.build(story)
 def seed_data():
