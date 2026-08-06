@@ -19,9 +19,9 @@
           <td>{{ log.actor }}</td>
           <td>
             <span class="badge log-action log-action-{{ log.action }}">
-              {{ {'created':'ایجاد', 'updated':'ویرایش', 'deleted':'حذف', 'imported':'ایمپورت'}.get(log.action, log.action) }}
+              {{ {'created':'ایجاد', 'updated':'ویرایش', 'deleted':'حذف', 'imported':'ایمپورت', 'exported':'خروجی'}.get(log.action, log.action) }}
             </span>
-            <small class="text-muted">{{ {'extension':'داخلی', 'department':'بخش'}.get(log.entity_type, log.entity_type) }}</small>
+            <small class="text-muted">{{ {'extension':'داخلی', 'department':'بخش', 'user':'کاربر مدیر', 'backup':'بکاپ'}.get(log.entity_type, log.entity_type) }}</small>
           </td>
           <td>{{ log.entity_label }}</td>
           <td class="text-muted"><small>{{ log.details or '—' }}</small></td>

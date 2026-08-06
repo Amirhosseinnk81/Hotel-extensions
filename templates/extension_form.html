@@ -5,6 +5,7 @@
   <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
   <h1 class="h2 mt-3">{{ 'ویرایش' if entry else 'ثبت' }} داخلی</h1>
   <form method="post" class="panel mt-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-3">
       <div class="col-md-4">
         <label class="form-label">شماره داخلی *</label>

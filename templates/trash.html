@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}سطل بازیافت{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">سطل بازیافت</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+</div>
+
+<div class="panel p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>داخلی</th><th>عنوان</th><th>بخش</th><th>تاریخ حذف</th><th></th></tr></thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td class="fw-bold text-primary">{{ e.extension }}</td>
+          <td>{{ e.title }}</td>
+          <td>{{ e.department.name if e.department else '—' }}</td>
+          <td><small>{{ e.deleted_at.strftime('%Y/%m/%d %H:%M') if e.deleted_at else '—' }}</small></td>
+          <td class="text-nowrap">
+            <form action="{{ url_for('restore_extension', entry_id=e.id) }}" method="post" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-success">بازگردانی</button>
+            </form>
+            <form action="{{ url_for('purge_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('این داخلی برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger">حذف همیشگی</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center py-4 text-muted">سطل بازیافت خالی است.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

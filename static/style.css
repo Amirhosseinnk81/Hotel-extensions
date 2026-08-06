@@ -153,6 +153,19 @@ body{
 .results-page-info{font-size:.85rem;color:var(--muted)}
 
 .export-bar{display:flex;flex-wrap:wrap;gap:.5rem}
+.view-toggle{display:flex;gap:.25rem;background:var(--card-bg);border:1px solid var(--line);border-radius:10px;padding:.2rem}
+.view-toggle-btn{
+  width:32px;height:32px;border:none;border-radius:7px;background:transparent;
+  color:var(--muted);font-size:.95rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .15s ease, color .15s ease;
+}
+.view-toggle-btn:hover{color:var(--navy)}
+.view-toggle-btn.active{background:var(--navy);color:#fff}
+.compact-table{background:var(--card-bg);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.compact-table thead th{background:var(--ivory);color:var(--navy);font-size:.78rem;border-bottom:0}
+[data-theme="dark"] .compact-table thead th{color:var(--text)}
+.compact-table td,.compact-table th{padding:.65rem .9rem;border-color:var(--line);font-size:.85rem;color:var(--text)}
 .btn-export{
   display:inline-flex;align-items:center;gap:.4rem;
   background:linear-gradient(120deg,var(--navy),var(--navy-deep));
@@ -321,6 +334,7 @@ body{
 .log-action-updated{background:#eef6ff;color:#2159b0}
 .log-action-deleted{background:#fdeceb;color:#a5322a}
 .log-action-imported{background:#fff5df;color:#a37907}
+.log-action-exported{background:#f0e9fb;color:#6a3fb5}
 
 /* ---------- Admin: department chips ---------- */
 .dept-chip-grid{
@@ -349,6 +363,8 @@ body{
 /* ---------- Admin: search bar ---------- */
 .admin-search-bar{display:flex;gap:.5rem;padding:1rem 1.25rem;border-bottom:1px solid var(--line);align-items:center}
 .admin-search-bar .input-icon{flex:1}
+.bulk-action-bar{display:flex;align-items:center;gap:.6rem;padding:.6rem 1.25rem;background:var(--ivory);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.bulk-count{font-size:.8rem;color:var(--muted);font-weight:600}
 
 /* ---------- Login & Admin (kept, lightly refreshed) ---------- */
 .login-box{max-width:430px;margin:7vh auto;padding:2rem;background:var(--card-bg);border:1px solid var(--line);border-radius:17px;box-shadow:0 10px 30px #0d234012}

@@ -171,6 +171,66 @@
     });
   }
 
+  /* ---------------- Admin: bulk select ---------------- */
+  function initBulkSelect() {
+    var selectAll = document.getElementById('selectAllRows');
+    var countEl = document.getElementById('bulkSelectedCount');
+    var bulkForm = document.getElementById('bulkForm');
+    if (!selectAll || !bulkForm) return;
+    var actionButtons = bulkForm.querySelectorAll('button[type="submit"]');
+
+    function rowCheckboxes() {
+      return Array.prototype.slice.call(document.querySelectorAll('.row-select'));
+    }
+
+    function refresh() {
+      var checked = rowCheckboxes().filter(function (cb) { return cb.checked; });
+      if (countEl) countEl.textContent = checked.length;
+      actionButtons.forEach(function (btn) { btn.disabled = checked.length === 0; });
+      var all = rowCheckboxes();
+      selectAll.checked = all.length > 0 && checked.length === all.length;
+    }
+
+    selectAll.addEventListener('change', function () {
+      rowCheckboxes().forEach(function (cb) { cb.checked = selectAll.checked; });
+      refresh();
+    });
+
+    document.addEventListener('change', function (e) {
+      if (e.target.classList && e.target.classList.contains('row-select')) refresh();
+    });
+
+    refresh();
+  }
+
+  /* ---------------- Card/table view toggle ---------------- */
+  var VIEW_KEY = 'hp_view_mode';
+  function applyViewMode(mode) {
+    var cardsView = document.getElementById('cardsView');
+    var tableView = document.getElementById('tableView');
+    if (!cardsView || !tableView) return;
+    cardsView.style.display = mode === 'table' ? 'none' : '';
+    tableView.style.display = mode === 'table' ? '' : 'none';
+    document.querySelectorAll('.view-toggle-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.view === mode);
+    });
+  }
+
+  function initViewToggle() {
+    var buttons = document.querySelectorAll('.view-toggle-btn');
+    if (!buttons.length) return;
+    var current = 'cards';
+    try { current = localStorage.getItem(VIEW_KEY) || 'cards'; } catch (e) {}
+    applyViewMode(current);
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mode = btn.dataset.view;
+        try { localStorage.setItem(VIEW_KEY, mode); } catch (e) {}
+        applyViewMode(mode);
+      });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initTheme();
     initFavorites();
@@ -179,5 +239,7 @@
     initPrintButtons();
     initUpdatePolling();
     initDetailModal();
+    initBulkSelect();
+    initViewToggle();
   });
 })();
