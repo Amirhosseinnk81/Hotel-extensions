@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 hotel_extensions.db
+.secret_key
+.admin_prefix
+tmp_imports/
+logs/

@@ -33,12 +33,21 @@
     </a>
     <nav class="header-nav">
       <a class="header-link" href="{{ url_for('index') }}">صفحه اصلی</a>
-      <!-- {% if current_user.is_authenticated %}
-        <a class="header-link" href="{{ url_for('admin') }}">مدیریت</a>
+      {% if current_user.is_authenticated %}
+        <div class="dropdown">
+          <button class="header-link dropdown-toggle btn btn-link p-0 border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">مدیریت</button>
+          <ul class="dropdown-menu dropdown-menu-end admin-nav-menu">
+            <li><a class="dropdown-item" href="{{ url_for('admin') }}">📋 لیست داخلی‌ها</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('trash') }}">🗑 سطل بازیافت</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('admin_users') }}">👤 مدیریت ادمین‌ها</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('activity_log') }}">🕒 لاگ فعالیت‌ها</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('download_backup') }}">💾 دانلود بکاپ دیتابیس</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{{ url_for('change_password') }}">🔑 تغییر رمز عبور</a></li>
+          </ul>
+        </div>
         <a class="btn btn-gold btn-sm" href="{{ url_for('logout') }}">خروج</a>
-      {% else %}
-        <a class="btn btn-gold btn-sm" href="{{ url_for('login') }}">ورود مدیر</a>
-      {% endif %} -->
+      {% endif %}
       <div class="theme-switch" role="group" aria-label="انتخاب پوسته">
         <button type="button" class="theme-btn" data-theme-value="light" title="روشن">☀</button>
         <button type="button" class="theme-btn" data-theme-value="dark" title="تیره">☾</button>
