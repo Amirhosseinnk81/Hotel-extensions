@@ -47,7 +47,9 @@
           </ul>
         </div>
         <a class="btn btn-gold btn-sm" href="{{ url_for('logout') }}">خروج</a>
-      {% endif %}
+      {% else %}
+        <a class="btn btn-gold btn-sm" href="{{ url_for('login') }}">ورود مدیر</a>
+      {% endif %} -->
       <div class="theme-switch" role="group" aria-label="انتخاب پوسته">
         <button type="button" class="theme-btn" data-theme-value="light" title="روشن">☀</button>
         <button type="button" class="theme-btn" data-theme-value="dark" title="تیره">☾</button>

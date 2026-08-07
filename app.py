@@ -1,13 +1,11 @@
 import csv
 import glob
 import io
-import logging
 import os
 import re
 import secrets
 import uuid
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 
 
 
@@ -33,7 +31,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
-ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
@@ -58,30 +55,6 @@ def get_or_create_secret_key():
     except OSError:
         pass
     return key
-
-
-def get_or_create_admin_prefix():
-    """The entire admin area (including the login page) is mounted under
-    a secret, unguessable URL segment instead of the predictable
-    '/admin' and '/login' — and no link to it is rendered anywhere in
-    the public pages. Set ADMIN_URL_PREFIX in the environment to choose
-    your own memorable value; otherwise a random one is generated once
-    and persisted locally so it doesn't change across restarts."""
-    env_prefix = os.getenv('ADMIN_URL_PREFIX')
-    if env_prefix:
-        return env_prefix.strip('/')
-    if os.path.isfile(ADMIN_PREFIX_FILE):
-        with open(ADMIN_PREFIX_FILE, 'r', encoding='utf-8') as f:
-            prefix = f.read().strip()
-            if prefix:
-                return prefix
-    prefix = 'staff-' + secrets.token_hex(4)
-    try:
-        with open(ADMIN_PREFIX_FILE, 'w', encoding='utf-8') as f:
-            f.write(prefix)
-    except OSError:
-        pass
-    return prefix
 
 
 # Simple in-memory login rate limiter: {ip: [timestamps of recent failures]}.
@@ -270,7 +243,6 @@ def get_cached_departments():
 
 def create_app():
     app = Flask(__name__)
-    admin_prefix = get_or_create_admin_prefix()
     app.config.update(
         SECRET_KEY=get_or_create_secret_key(),
         SQLALCHEMY_DATABASE_URI='sqlite:///' + os.path.join(BASE_DIR, 'hotel_extensions.db'),
@@ -278,7 +250,6 @@ def create_app():
         MAX_CONTENT_LENGTH=5 * 1024 * 1024,
         PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', r'C:\Windows\Fonts\Tahoma.ttf'),
         SEND_FILE_MAX_AGE_DEFAULT=1800,  # cache static assets (CSS/JS) in the browser for 30 min
-        ADMIN_URL_PREFIX=admin_prefix,
     )
     db.init_app(app)
     login_manager.init_app(app)
@@ -286,28 +257,6 @@ def create_app():
     app.jinja_env.globals['dept_icon'] = department_icon
     app.jinja_env.globals['data_version'] = lambda: _data_version
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
-
-    if not app.debug:
-        log_dir = os.path.join(BASE_DIR, 'logs')
-        os.makedirs(log_dir, exist_ok=True)
-        file_handler = RotatingFileHandler(os.path.join(log_dir, 'app.log'), maxBytes=1_000_000, backupCount=5, encoding='utf-8')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
-        file_handler.setLevel(logging.INFO)
-        app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO)
-
-    @app.route('/robots.txt')
-    def robots_txt():
-        return 'User-agent: *\nDisallow: /\n', 200, {'Content-Type': 'text/plain; charset=utf-8'}
-
-    @app.errorhandler(404)
-    def not_found(_error):
-        return render_template('error.html', code=404, heading='صفحه پیدا نشد', message='آدرسی که وارد کردید وجود ندارد.'), 404
-
-    @app.errorhandler(500)
-    def server_error(error):
-        app.logger.exception('Unhandled server error: %s', error)
-        return render_template('error.html', code=500, heading='خطای داخلی سرور', message='مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید.'), 500
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -433,7 +382,7 @@ def create_app():
             total_count=total_count,
         )
 
-    @app.route(f'/{admin_prefix}')
+    @app.route('/admin')
     @login_required
     def admin():
         q = request.args.get('q', '').strip()
@@ -452,13 +401,13 @@ def create_app():
             stats=get_cached_stats(),
         )
 
-    @app.route(f'/{admin_prefix}/activity-log')
+    @app.route('/admin/activity-log')
     @login_required
     def activity_log():
         logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(300).all()
         return render_template('activity_log.html', logs=logs)
 
-    @app.route(f'/{admin_prefix}/login', methods=['GET', 'POST'])
+    @app.route('/login', methods=['GET', 'POST'])
     def login():
         if current_user.is_authenticated:
             return redirect(url_for('admin'))
@@ -485,7 +434,7 @@ def create_app():
         logout_user()
         return redirect(url_for('index'))
 
-    @app.route(f'/{admin_prefix}/change-password', methods=['GET', 'POST'])
+    @app.route('/admin/change-password', methods=['GET', 'POST'])
     @login_required
     def change_password():
         if request.method == 'POST':
@@ -507,13 +456,13 @@ def create_app():
                 return redirect(url_for('admin'))
         return render_template('change_password.html', forced=current_user.must_change_password)
 
-    @app.route(f'/{admin_prefix}/users')
+    @app.route('/admin/users')
     @login_required
     def admin_users():
         users = User.query.order_by(User.username).all()
         return render_template('admin_users.html', users=users)
 
-    @app.route(f'/{admin_prefix}/users', methods=['POST'])
+    @app.route('/admin/users', methods=['POST'])
     @login_required
     def create_user():
         username = request.form.get('username', '').strip()
@@ -532,7 +481,7 @@ def create_app():
             flash('مدیر جدید افزوده شد. در اولین ورود باید رمز عبور را تغییر دهد.', 'success')
         return redirect(url_for('admin_users'))
 
-    @app.route(f'/{admin_prefix}/users/<int:user_id>/delete', methods=['POST'])
+    @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
     @login_required
     def delete_user(user_id):
         target = db.get_or_404(User, user_id)
@@ -547,14 +496,14 @@ def create_app():
             flash('مدیر حذف شد.', 'success')
         return redirect(url_for('admin_users'))
 
-    @app.route(f'/{admin_prefix}/extensions/new', methods=['GET', 'POST'])
+    @app.route('/admin/extensions/new', methods=['GET', 'POST'])
     @login_required
     def create_extension():
         if request.method == 'POST':
             return save_extension()
         return render_template('extension_form.html', entry=None, departments=Department.query.order_by(Department.name).all())
 
-    @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/edit', methods=['GET', 'POST'])
+    @app.route('/admin/extensions/<int:entry_id>/edit', methods=['GET', 'POST'])
     @login_required
     def edit_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
@@ -597,7 +546,7 @@ def create_app():
         flash('داخلی با موفقیت ذخیره شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/delete', methods=['POST'])
+    @app.route('/admin/extensions/<int:entry_id>/delete', methods=['POST'])
     @login_required
     def delete_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
@@ -609,7 +558,7 @@ def create_app():
         flash('داخلی به سطل بازیافت منتقل شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/extensions/delete-all', methods=['POST'])
+    @app.route('/admin/extensions/delete-all', methods=['POST'])
     @login_required
     def delete_all_extensions():
         if request.form.get('confirmation', '').strip() != 'پاک کن':
@@ -622,7 +571,7 @@ def create_app():
         flash(f'{count} داخلی به سطل بازیافت منتقل شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/restore', methods=['POST'])
+    @app.route('/admin/extensions/<int:entry_id>/restore', methods=['POST'])
     @login_required
     def restore_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
@@ -634,7 +583,7 @@ def create_app():
         flash('داخلی بازگردانده شد.', 'success')
         return redirect(url_for('trash'))
 
-    @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/purge', methods=['POST'])
+    @app.route('/admin/extensions/<int:entry_id>/purge', methods=['POST'])
     @login_required
     def purge_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
@@ -645,13 +594,13 @@ def create_app():
         flash('داخلی برای همیشه حذف شد.', 'success')
         return redirect(url_for('trash'))
 
-    @app.route(f'/{admin_prefix}/trash')
+    @app.route('/admin/trash')
     @login_required
     def trash():
         deleted_entries = Extension.query.filter_by(is_deleted=True).order_by(Extension.deleted_at.desc()).all()
         return render_template('trash.html', entries=deleted_entries)
 
-    @app.route(f'/{admin_prefix}/extensions/bulk-activate', methods=['POST'])
+    @app.route('/admin/extensions/bulk-activate', methods=['POST'])
     @login_required
     def bulk_activate():
         ids = request.form.getlist('selected_ids', type=int)
@@ -665,7 +614,7 @@ def create_app():
             flash(f'{len(ids)} داخلی فعال شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/extensions/bulk-deactivate', methods=['POST'])
+    @app.route('/admin/extensions/bulk-deactivate', methods=['POST'])
     @login_required
     def bulk_deactivate():
         ids = request.form.getlist('selected_ids', type=int)
@@ -679,7 +628,7 @@ def create_app():
             flash(f'{len(ids)} داخلی غیرفعال شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/extensions/bulk-delete', methods=['POST'])
+    @app.route('/admin/extensions/bulk-delete', methods=['POST'])
     @login_required
     def bulk_delete():
         ids = request.form.getlist('selected_ids', type=int)
@@ -693,7 +642,7 @@ def create_app():
             flash(f'{len(ids)} داخلی به سطل بازیافت منتقل شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/departments', methods=['POST'])
+    @app.route('/admin/departments', methods=['POST'])
     @login_required
     def create_department():
         name = request.form.get('name', '').strip()
@@ -708,7 +657,7 @@ def create_app():
             flash('نام بخش خالی یا تکراری است.', 'danger')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/departments/<int:department_id>/edit', methods=['POST'])
+    @app.route('/admin/departments/<int:department_id>/edit', methods=['POST'])
     @login_required
     def edit_department(department_id):
         department = db.get_or_404(Department, department_id)
@@ -727,7 +676,7 @@ def create_app():
             flash('بخش ویرایش شد.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/departments/<int:department_id>/delete', methods=['POST'])
+    @app.route('/admin/departments/<int:department_id>/delete', methods=['POST'])
     @login_required
     def delete_department(department_id):
         department = db.get_or_404(Department, department_id)
@@ -739,7 +688,7 @@ def create_app():
         flash('بخش حذف شد؛ داخلی‌های آن بدون بخش باقی مانده‌اند.', 'success')
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/backup')
+    @app.route('/admin/backup')
     @login_required
     def download_backup():
         db_path = os.path.join(BASE_DIR, 'hotel_extensions.db')
@@ -751,7 +700,7 @@ def create_app():
         db.session.commit()
         return send_file(db_path, mimetype='application/octet-stream', as_attachment=True, download_name=f'hotel_extensions_backup_{stamp}.db')
 
-    @app.route(f'/{admin_prefix}/export/<fmt>')
+    @app.route('/admin/export/<fmt>')
     @login_required
     def export_data(fmt):
         entries = Extension.query.filter_by(is_deleted=False).order_by(Extension.extension).all()
@@ -786,7 +735,7 @@ def create_app():
         output.seek(0)
         return send_file(output, mimetype='application/pdf', as_attachment=True, download_name='hotel_extensions.pdf')
 
-    @app.route(f'/{admin_prefix}/export/pdf')
+    @app.route('/admin/export/pdf')
     @login_required
     def export_pdf():
         department_id = request.args.get('department_id', type=int)
@@ -807,7 +756,7 @@ def create_app():
         name = 'hotel_extensions_all_departments.pdf' if not department_id else f'hotel_extensions_department_{department_id}.pdf'
         return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=name)
 
-    @app.route(f'/{admin_prefix}/import/preview', methods=['POST'])
+    @app.route('/admin/import/preview', methods=['POST'])
     @login_required
     def import_preview():
         _cleanup_stale_imports()
@@ -859,7 +808,7 @@ def create_app():
         }
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/import/confirm', methods=['POST'])
+    @app.route('/admin/import/confirm', methods=['POST'])
     @login_required
     def import_confirm():
         token = session.pop('import_token', None)
@@ -910,7 +859,7 @@ def create_app():
                 pass
         return redirect(url_for('admin'))
 
-    @app.route(f'/{admin_prefix}/import/cancel', methods=['POST'])
+    @app.route('/admin/import/cancel', methods=['POST'])
     @login_required
     def import_cancel():
         token = session.pop('import_token', None)
@@ -1076,7 +1025,4 @@ def seed_data():
 
 
 if __name__ == '__main__':
-    # This built-in server is for local development only. In production,
-    # run behind a real WSGI server instead — see DEPLOYMENT.md.
-    debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
-    create_app().run(debug=True, host='127.0.0.1', port=5000)
+    create_app().run(debug=True, host='0.0.0.0', port=5000)
