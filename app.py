@@ -6,13 +6,15 @@ import os
 import re
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from logging.handlers import RotatingFileHandler
 
 
 
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
@@ -106,6 +108,20 @@ def record_login_failure(ip):
 
 def clear_login_failures(ip):
     _login_failures.pop(ip, None)
+
+
+LOCAL_TZ = ZoneInfo(os.getenv('APP_TIMEZONE', 'Asia/Tehran'))
+
+
+def format_local_datetime(value, fmt='%Y/%m/%d %H:%M'):
+    """All timestamps are stored in UTC (datetime.utcnow()); this converts
+    to the hotel's local timezone for display. Set APP_TIMEZONE in the
+    environment if the server isn't in Iran."""
+    if value is None:
+        return '—'
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(LOCAL_TZ).strftime(fmt)
 
 
 def department_icon(name):
@@ -280,13 +296,36 @@ def create_app():
         PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', r'C:\Windows\Fonts\Tahoma.ttf'),
         SEND_FILE_MAX_AGE_DEFAULT=1800,  # cache static assets (CSS/JS) in the browser for 30 min
         ADMIN_URL_PREFIX=admin_prefix,
+        PERMANENT_SESSION_LIFETIME=timedelta(minutes=int(os.getenv('SESSION_IDLE_MINUTES', '60'))),
     )
+    # Trust X-Forwarded-* headers from exactly one reverse proxy hop, so
+    # request.remote_addr (used for login rate-limiting and activity
+    # logging) reflects the real client, not the proxy's own address.
+    # Only meaningful once this sits behind Nginx/IIS per DEPLOYMENT.md —
+    # harmless when accessed directly.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     db.init_app(app)
     login_manager.init_app(app)
     CSRFProtect(app)
     app.jinja_env.globals['dept_icon'] = department_icon
     app.jinja_env.globals['data_version'] = lambda: _data_version
+    app.jinja_env.filters['local_dt'] = format_local_datetime
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
+
+    @app.before_request
+    def enforce_idle_timeout():
+        # Sliding session: every request resets the expiry clock, but if
+        # the browser sat idle past PERMANENT_SESSION_LIFETIME the cookie
+        # itself will already have expired — this just makes the session
+        # non-permanent-by-default explicit and refreshes the timer.
+        session.permanent = True
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'same-origin')
+        return response
 
     if not app.debug:
         log_dir = os.path.join(BASE_DIR, 'logs')
@@ -820,6 +859,9 @@ def create_app():
         file = request.files.get('file')
         if not file or not file.filename:
             flash('فایلی انتخاب نشده است.', 'danger')
+            return redirect(url_for('admin'))
+        if not file.filename.lower().endswith(('.csv', '.xlsx')):
+            flash('فقط فایل CSV یا XLSX پذیرفته می‌شود.', 'danger')
             return redirect(url_for('admin'))
         try:
             rows = read_import_file(file)

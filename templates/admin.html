@@ -14,7 +14,7 @@
   <div class="stat-card"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>غیرفعال</small></div>
   <div class="stat-card">
     <span class="stat-icon">🕒</span>
-    <strong class="stat-date">{{ stats.last_updated.strftime('%Y/%m/%d') if stats.last_updated else '—' }}</strong>
+    <strong class="stat-date">{{ (stats.last_updated | local_dt('%Y/%m/%d')) if stats.last_updated else '—' }}</strong>
     <small>آخرین به‌روزرسانی</small>
   </div>
   <div class="stat-card"><span class="stat-icon">👤</span><strong>{{ stats.admin_count }}</strong><small>کاربر مدیر</small></div>
