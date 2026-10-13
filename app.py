@@ -1,5 +1,6 @@
 import csv
 import glob
+import hashlib
 import io
 import logging
 import os
@@ -37,22 +38,38 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
 ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
+
+# SHA-256 of secret keys that were committed to the public Git history and
+# must never be used again. If the key loaded at startup matches one of
+# these, a fresh random key is generated and saved instead.
+COMPROMISED_SECRET_KEY_HASHES = {
+    'b3199ef09757effb2b0b4db2a9283b8af6e22143a73ea160fab9e979df2b2a0c',
+}
+# Passwords that ship with the project. Any account still using one of them
+# is forced to change it at next login.
+DEFAULT_PASSWORDS = ('admin123',)
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
 
 
+def _is_compromised_secret_key(key):
+    return hashlib.sha256(key.encode('utf-8')).hexdigest() in COMPROMISED_SECRET_KEY_HASHES
+
+
 def get_or_create_secret_key():
     """Use SECRET_KEY from the environment if set; otherwise generate a
     random key once and persist it to a local file so it survives
-    restarts, instead of falling back to a hardcoded shared value."""
+    restarts, instead of falling back to a hardcoded shared value.
+    A key that is known to have leaked (see COMPROMISED_SECRET_KEY_HASHES)
+    is never accepted: it is replaced by a new random key."""
     env_key = os.getenv('SECRET_KEY')
-    if env_key:
+    if env_key and not _is_compromised_secret_key(env_key):
         return env_key
     if os.path.isfile(SECRET_KEY_FILE):
         with open(SECRET_KEY_FILE, 'r', encoding='utf-8') as f:
             key = f.read().strip()
-            if key:
+            if key and not _is_compromised_secret_key(key):
                 return key
     key = secrets.token_hex(32)
     try:
@@ -296,6 +313,9 @@ def create_app():
         PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', r'C:\Windows\Fonts\Tahoma.ttf'),
         SEND_FILE_MAX_AGE_DEFAULT=1800,  # cache static assets (CSS/JS) in the browser for 30 min
         ADMIN_URL_PREFIX=admin_prefix,
+        # Staff e-mail / mobile numbers are shown to logged-in admins only,
+        # unless SHOW_CONTACT_PUBLICLY=1 is set in the environment.
+        SHOW_CONTACT_PUBLICLY=os.getenv('SHOW_CONTACT_PUBLICLY', '0') == '1',
         PERMANENT_SESSION_LIFETIME=timedelta(minutes=int(os.getenv('SESSION_IDLE_MINUTES', '60'))),
     )
     # Trust X-Forwarded-* headers from exactly one reverse proxy hop, so
@@ -308,6 +328,7 @@ def create_app():
     login_manager.init_app(app)
     CSRFProtect(app)
     app.jinja_env.globals['dept_icon'] = department_icon
+    app.jinja_env.globals['can_see_contact'] = lambda: app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
     app.jinja_env.globals['data_version'] = lambda: _data_version
     app.jinja_env.filters['local_dt'] = format_local_datetime
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
@@ -362,6 +383,7 @@ def create_app():
         db.create_all()
         _ensure_columns(db.engine)
         seed_data()
+        flag_default_passwords(app)
 
     @app.before_request
     def enforce_password_change():
@@ -541,6 +563,8 @@ def create_app():
                 flash('رمز عبور فعلی صحیح نیست.', 'danger')
             elif len(new_password) < 6:
                 flash('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.', 'danger')
+            elif new_password in DEFAULT_PASSWORDS:
+                flash('این رمز عبور پیش‌فرض و قابل حدس است؛ رمز دیگری انتخاب کنید.', 'danger')
             elif new_password != confirm_password:
                 flash('رمز عبور جدید و تکرار آن یکسان نیستند.', 'danger')
             else:
@@ -1113,6 +1137,19 @@ def build_extensions_pdf(output, extensions, font_path):
         story.append(KeepTogether([block]))
 
     document.build(story)
+def flag_default_passwords(app):
+    """Force a password change for every account that still uses a
+    password shipped with the project (e.g. admin / admin123)."""
+    flagged = []
+    for user in User.query.filter_by(must_change_password=False).all():
+        if any(user.check_password(p) for p in DEFAULT_PASSWORDS):
+            user.must_change_password = True
+            flagged.append(user.username)
+    if flagged:
+        db.session.commit()
+        app.logger.warning('Default password still in use; password change forced for: %s', ', '.join(flagged))
+
+
 def seed_data():
     if not User.query.first():
         user = User(username='admin', display_name='مدیر سیستم', must_change_password=True)

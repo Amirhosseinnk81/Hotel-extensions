@@ -133,8 +133,8 @@
         data-person="{{ e.person_name or '—' }}"
         data-department="{{ e.department.name if e.department else 'بدون بخش' }}"
         data-location="{{ e.location or '—' }}"
-        data-email="{{ e.email or '—' }}"
-        data-mobile="{{ e.mobile or '—' }}"
+        {% if can_see_contact() %}data-email="{{ e.email or '—' }}"
+        data-mobile="{{ e.mobile or '—' }}"{% endif %}
         data-hours="{{ e.department.working_hours if e.department and e.department.working_hours else 'ثبت نشده' }}"
         data-notes="{{ e.notes or '—' }}"
         data-created="{{ e.created_at | local_dt }}"
@@ -225,8 +225,10 @@
         <div class="detail-row"><span>نام مسئول</span><strong data-field="person"></strong></div>
         <div class="detail-row"><span>بخش</span><strong data-field="department"></strong></div>
         <div class="detail-row"><span>محل استقرار</span><strong data-field="location"></strong></div>
+        {% if can_see_contact() %}
         <div class="detail-row"><span>ایمیل</span><strong data-field="email"></strong></div>
         <div class="detail-row"><span>موبایل سازمانی</span><strong data-field="mobile"></strong></div>
+        {% endif %}
         <div class="detail-row"><span>ساعات کاری بخش</span><strong data-field="hours"></strong></div>
         <div class="detail-row"><span>وضعیت حضور</span><strong data-field="presence"></strong></div>
         <div class="detail-row"><span>توضیحات</span><strong data-field="notes"></strong></div>
