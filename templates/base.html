@@ -46,10 +46,11 @@
             <li><a class="dropdown-item" href="{{ url_for('change_password') }}">🔑 تغییر رمز عبور</a></li>
           </ul>
         </div>
-        <a class="btn btn-gold btn-sm" href="{{ url_for('logout') }}">خروج</a>
-      {% else %}
-        <a class="btn btn-gold btn-sm" href="{{ url_for('login') }}">ورود مدیر</a>
-      {% endif %} -->
+        <form method="post" action="{{ url_for('logout') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-gold btn-sm">خروج</button>
+        </form>
+      {% endif %}
       <div class="theme-switch" role="group" aria-label="انتخاب پوسته">
         <button type="button" class="theme-btn" data-theme-value="light" title="روشن">☀</button>
         <button type="button" class="theme-btn" data-theme-value="dark" title="تیره">☾</button>

@@ -6,6 +6,8 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -31,6 +33,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, PageTemplate, Paragraph, Spacer, Table, TableStyle
 from sqlalchemy import func, or_
+from xml.sax.saxutils import escape as xml_escape
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -102,6 +105,84 @@ def get_or_create_admin_prefix():
     except OSError:
         pass
     return prefix
+
+
+# Persian-capable fonts tried (in order) when PDF_FONT_PATH is not set. Any
+# .ttf dropped into a "fonts" folder next to app.py is tried first.
+PDF_FONT_CANDIDATES = (
+    r'C:\Windows\Fonts\Tahoma.ttf',
+    '/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Regular.ttf',
+    '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+)
+
+
+def resolve_pdf_font(configured=None):
+    """Return (font_path, error_message); exactly one of them is None."""
+    if configured:
+        if os.path.isfile(configured):
+            return configured, None
+        return None, f'فونت تعیین‌شده در PDF_FONT_PATH پیدا نشد: {configured}'
+    local_fonts = sorted(glob.glob(os.path.join(BASE_DIR, 'fonts', '*.ttf')))
+    for path in local_fonts + list(PDF_FONT_CANDIDATES):
+        if os.path.isfile(path):
+            return path, None
+    return None, ('هیچ فونت فارسی روی این سرور پیدا نشد. یک فایل TTF فارسی (مثلاً Vazirmatn) را در پوشهٔ fonts کنار app.py '
+                  'بگذارید یا مسیر آن را در متغیر محیطی PDF_FONT_PATH ست کنید.')
+
+
+class TrustedProxyFix:
+    """Apply ProxyFix (X-Forwarded-* headers) only when the connection really
+    comes from a trusted reverse proxy. A client that reaches the app
+    directly can otherwise forge X-Forwarded-For and dodge the login
+    rate limit. Trusted addresses: TRUSTED_PROXIES (comma separated),
+    default 127.0.0.1 and ::1 (Nginx / IIS-ARR on the same machine)."""
+
+    def __init__(self, wsgi_app, trusted):
+        self.wsgi_app = wsgi_app
+        self.trusted = set(trusted)
+        self.proxy_fix = ProxyFix(wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+    def __call__(self, environ, start_response):
+        if environ.get('REMOTE_ADDR') in self.trusted:
+            return self.proxy_fix(environ, start_response)
+        return self.wsgi_app(environ, start_response)
+
+
+def cell_text(value):
+    """Cell value -> clean string; Excel numbers such as 9121234567.0 lose the '.0'."""
+    if value is None:
+        return ''
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value).strip()
+
+
+def parse_present(value):
+    return cell_text(value).lower() in ('حاضر', 'present', '1', 'true', 'yes', 'بله')
+
+
+def make_db_backup(db_path):
+    """Consistent snapshot of the live SQLite file via SQLite's backup API
+    (a plain file copy can catch the database mid-write)."""
+    fd, tmp_path = tempfile.mkstemp(suffix='.db', dir=IMPORT_TMP_DIR)
+    os.close(fd)
+    try:
+        source = sqlite3.connect(db_path)
+        target = sqlite3.connect(tmp_path)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+        with open(tmp_path, 'rb') as f:
+            return io.BytesIO(f.read())
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 # Simple in-memory login rate limiter: {ip: [timestamps of recent failures]}.
@@ -310,25 +391,32 @@ def create_app():
         SQLALCHEMY_DATABASE_URI='sqlite:///' + os.path.join(BASE_DIR, 'hotel_extensions.db'),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         MAX_CONTENT_LENGTH=5 * 1024 * 1024,
-        PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', r'C:\Windows\Fonts\Tahoma.ttf'),
+        PDF_FONT_PATH=os.getenv('PDF_FONT_PATH', ''),  # empty = auto-detect, see resolve_pdf_font()
         SEND_FILE_MAX_AGE_DEFAULT=1800,  # cache static assets (CSS/JS) in the browser for 30 min
         ADMIN_URL_PREFIX=admin_prefix,
         # Staff e-mail / mobile numbers are shown to logged-in admins only,
         # unless SHOW_CONTACT_PUBLICLY=1 is set in the environment.
         SHOW_CONTACT_PUBLICLY=os.getenv('SHOW_CONTACT_PUBLICLY', '0') == '1',
         PERMANENT_SESSION_LIFETIME=timedelta(minutes=int(os.getenv('SESSION_IDLE_MINUTES', '60'))),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        # Set SESSION_COOKIE_SECURE=1 once the site is served over HTTPS.
+        SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '0') == '1',
     )
     # Trust X-Forwarded-* headers from exactly one reverse proxy hop, so
     # request.remote_addr (used for login rate-limiting and activity
-    # logging) reflects the real client, not the proxy's own address.
-    # Only meaningful once this sits behind Nginx/IIS per DEPLOYMENT.md —
-    # harmless when accessed directly.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    # logging) reflects the real client — but only when the request really
+    # arrives from a trusted proxy (see TrustedProxyFix / TRUSTED_PROXIES).
+    trusted_proxies = [p.strip() for p in os.getenv('TRUSTED_PROXIES', '127.0.0.1,::1').split(',') if p.strip()]
+    app.wsgi_app = TrustedProxyFix(app.wsgi_app, trusted_proxies)
     db.init_app(app)
     login_manager.init_app(app)
     CSRFProtect(app)
     app.jinja_env.globals['dept_icon'] = department_icon
-    app.jinja_env.globals['can_see_contact'] = lambda: app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
+    def can_see_contact():
+        return app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
+
+    app.jinja_env.globals['can_see_contact'] = can_see_contact
     app.jinja_env.globals['data_version'] = lambda: _data_version
     app.jinja_env.filters['local_dt'] = format_local_datetime
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
@@ -546,7 +634,7 @@ def create_app():
             flash('نام کاربری یا رمز عبور صحیح نیست.', 'danger')
         return render_template('login.html')
 
-    @app.route('/logout')
+    @app.route('/logout', methods=['POST'])
     @login_required
     def logout():
         logout_user()
@@ -816,15 +904,21 @@ def create_app():
             flash('فایل دیتابیس پیدا نشد.', 'danger')
             return redirect(url_for('admin'))
         stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        try:
+            snapshot = make_db_backup(db_path)
+        except (sqlite3.Error, OSError):
+            app.logger.exception('Database backup failed')
+            flash('ساخت نسخهٔ پشتیبان ناموفق بود. جزئیات در لاگ سرور ثبت شد.', 'danger')
+            return redirect(url_for('admin'))
         log_activity('exported', 'backup', 'دانلود نسخه پشتیبان کامل دیتابیس')
         db.session.commit()
-        return send_file(db_path, mimetype='application/octet-stream', as_attachment=True, download_name=f'hotel_extensions_backup_{stamp}.db')
+        return send_file(snapshot, mimetype='application/octet-stream', as_attachment=True, download_name=f'hotel_extensions_backup_{stamp}.db')
 
     @app.route(f'/{admin_prefix}/export/<fmt>')
     @login_required
     def export_data(fmt):
         entries = Extension.query.filter_by(is_deleted=False).order_by(Extension.extension).all()
-        response = build_tabular_export(fmt, entries)
+        response = build_tabular_export(fmt, entries, include_contact=True)
         if response is None:
             return 'فرمت نامعتبر است.', 404
         return response
@@ -834,7 +928,7 @@ def create_app():
         if fmt not in ('csv', 'xlsx'):
             return 'فرمت نامعتبر است.', 404
         entries, _, _ = build_filtered_query(request.args)
-        response = build_tabular_export(fmt, entries.all())
+        response = build_tabular_export(fmt, entries.all(), include_contact=can_see_contact())
         if response is None:
             return 'فرمت نامعتبر است.', 404
         return response
@@ -846,9 +940,9 @@ def create_app():
         if not entries:
             flash('هیچ داخلی‌ای برای این جست‌وجو/فیلتر برای خروجی گرفتن پیدا نشد.' if filters_active else 'هنوز داخلی‌ای برای خروجی گرفتن ثبت نشده است.', 'danger')
             return redirect(url_for('index'))
-        font_path = app.config['PDF_FONT_PATH']
-        if not os.path.isfile(font_path):
-            flash('فونت فارسی برای ساخت PDF پیدا نشد. مسیر PDF_FONT_PATH را تنظیم کنید.', 'danger')
+        font_path, font_error = resolve_pdf_font(app.config['PDF_FONT_PATH'])
+        if font_error:
+            flash(font_error, 'danger')
             return redirect(url_for('index'))
         output = io.BytesIO()
         build_extensions_pdf(output, entries, font_path)
@@ -866,9 +960,9 @@ def create_app():
         if not entries:
             flash('داخلی‌ای برای بخش انتخاب‌شده پیدا نشد.', 'danger')
             return redirect(url_for('admin'))
-        font_path = app.config['PDF_FONT_PATH']
-        if not os.path.isfile(font_path):
-            flash('فونت فارسی برای ساخت PDF پیدا نشد. مسیر PDF_FONT_PATH را تنظیم کنید.', 'danger')
+        font_path, font_error = resolve_pdf_font(app.config['PDF_FONT_PATH'])
+        if font_error:
+            flash(font_error, 'danger')
             return redirect(url_for('admin'))
         output = io.BytesIO()
         build_extensions_pdf(output, entries, font_path)
@@ -963,6 +1057,14 @@ def create_app():
                     item.department = department
                     item.location = str(row.get('location', '')).strip() or None
                     item.notes = str(row.get('notes', '')).strip() or None
+                    # Optional columns: only touched when the file has them, so older
+                    # files (without these columns) never wipe existing data.
+                    if 'email' in row:
+                        item.email = cell_text(row.get('email')) or None
+                    if 'mobile' in row:
+                        item.mobile = cell_text(row.get('mobile')) or None
+                    if 'present' in row:
+                        item.is_present = parse_present(row.get('present'))
                     item.is_active = str(row.get('status', 'فعال')).strip() not in ('غیرفعال', 'inactive', '0', 'False')
                     item.is_deleted = False
                     item.deleted_at = None
@@ -999,22 +1101,39 @@ def create_app():
     return app
 
 
-def export_headers(): return ['extension', 'title', 'person_name', 'department', 'location', 'notes', 'status']
-def export_rows(entries):
-    return [{'extension': e.extension, 'title': e.title, 'person_name': e.person_name or '', 'department': e.department.name if e.department else '', 'location': e.location or '', 'notes': e.notes or '', 'status': 'فعال' if e.is_active else 'غیرفعال'} for e in entries]
+def export_headers(include_contact=False):
+    columns = ['extension', 'title', 'person_name', 'department', 'location']
+    if include_contact:
+        columns += ['email', 'mobile']
+    return columns + ['notes', 'status', 'present']
 
 
-def build_tabular_export(fmt, entries):
-    """Build a CSV/XLSX send_file response for the given entries, or None for an unknown format."""
-    rows = export_rows(entries)
+def export_rows(entries, include_contact=False):
+    rows = []
+    for e in entries:
+        row = {'extension': e.extension, 'title': e.title, 'person_name': e.person_name or '', 'department': e.department.name if e.department else '', 'location': e.location or ''}
+        if include_contact:
+            row['email'] = e.email or ''
+            row['mobile'] = e.mobile or ''
+        row['notes'] = e.notes or ''
+        row['status'] = 'فعال' if e.is_active else 'غیرفعال'
+        row['present'] = 'حاضر' if e.is_present else 'خارج از شیفت'
+        rows.append(row)
+    return rows
+
+
+def build_tabular_export(fmt, entries, include_contact=False):
+    """Build a CSV/XLSX send_file response for the given entries, or None for an unknown format.
+    E-mail / mobile columns are included only when include_contact is true."""
+    rows = export_rows(entries, include_contact)
     if fmt == 'csv':
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()) if rows else export_headers())
+        writer = csv.DictWriter(buffer, fieldnames=export_headers(include_contact))
         writer.writeheader(); writer.writerows(rows)
         return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name='hotel_extensions.csv')
     if fmt == 'xlsx':
         wb = Workbook(); ws = wb.active; ws.title = 'Internals'
-        ws.append(export_headers())
+        ws.append(export_headers(include_contact))
         for row in rows: ws.append(list(row.values()))
         ws.freeze_panes = 'A2'; ws.auto_filter.ref = ws.dimensions
         for column in ws.columns:
@@ -1051,8 +1170,10 @@ def read_import_file(file):
 
 
 def pdf_text(value):
-    """Shape Persian text for correct right-to-left rendering in ReportLab."""
-    return get_display(reshape(str(value or '—')))
+    """Shape Persian text for correct right-to-left rendering in ReportLab.
+    The result is XML-escaped because Paragraph parses its text as markup
+    (otherwise a name such as "F&B" is printed as "F&B;")."""
+    return xml_escape(get_display(reshape(str(value or '—'))))
 
 
 def build_extensions_pdf(output, extensions, font_path):
