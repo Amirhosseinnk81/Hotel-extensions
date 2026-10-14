@@ -40,6 +40,39 @@
         <label class="form-label">موبایل سازمانی</label>
         <input name="mobile" value="{{ entry.mobile if entry and entry.mobile else '' }}" class="form-control" placeholder="09xxxxxxxxx" dir="ltr">
       </div>
+      <div class="col-md-4">
+        <label class="form-label">نوع داخلی</label>
+        <select name="kind" class="form-select">
+          <option value="auto" {% if not entry %}selected{% endif %}>خودکار (طبق الگوی شماره اتاق‌ها)</option>
+          {% for key, label in kind_labels.items() %}
+            <option value="{{ key }}" {% if entry and entry.kind == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">«اتاق مهمان» و «در انتظار بررسی» برای پرسنل نمایش داده نمی‌شوند.</small>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">MAC تلفن</label>
+        <input name="mac" value="{{ entry.mac if entry and entry.mac else '' }}" class="form-control" placeholder="00:15:65:AA:BB:CC" dir="ltr">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">مدل تلفن</label>
+        <input name="phone_model" value="{{ entry.phone_model if entry and entry.phone_model else '' }}" class="form-control" placeholder="Yealink T46U" dir="ltr">
+      </div>
+      {% if entry and (entry.reg_status or entry.last_ip or entry.user_agent) %}
+      <div class="col-12">
+        <div class="alert alert-light border mb-0 small">
+          <strong>اطلاعات زندهٔ تلفن (فقط‌خواندنی، از ایزابل خوانده می‌شود)</strong>
+          <div class="mt-1">
+            {% set ps = phone_status(entry) %}
+            {% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% endif %}
+            {% if entry.last_ip %}<span class="ms-2">IP: <span dir="ltr">{{ entry.last_ip }}</span></span>{% endif %}
+            {% if entry.rtt_ms is not none %}<span class="ms-2">تأخیر: <span dir="ltr">{{ entry.rtt_ms }} ms</span></span>{% endif %}
+            {% if entry.last_seen_at %}<span class="ms-2">آخرین بار دیده‌شده: {{ entry.last_seen_at | local_dt }}</span>{% endif %}
+            {% if entry.user_agent %}<div class="mt-1 text-muted" dir="ltr">{{ entry.user_agent }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="col-md-6 d-flex align-items-center gap-4">
         <div class="form-check form-switch mb-0">
           <input class="form-check-input" type="checkbox" name="is_active" id="active" {% if not entry or entry.is_active %}checked{% endif %}>

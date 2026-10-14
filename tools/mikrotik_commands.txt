@@ -1,0 +1,19 @@
+# MikroTik RouterOS - READ-ONLY commands for the Hotel-extensions project.
+# Open WinBox > New Terminal (or SSH) and paste the commands below one by one.
+# They only PRINT information; nothing is changed.
+# Send the output of each command. For long tables, the first ~15 lines are enough.
+
+/system resource print
+/system identity print
+/ip address print terse
+/interface vlan print terse
+/ip dhcp-server print terse
+/ip dhcp-server network print terse
+/ip dhcp-server lease print count-only
+/ip arp print count-only
+/ip service print terse
+
+# Phone subnet: replace 192.168.228. with the subnet your IP phones are on,
+# then run these two and send ONLY the first ~15 lines (they list devices by MAC and IP).
+/ip dhcp-server lease print terse where address~"^192\\.168\\.228\\."
+/ip arp print terse where address~"^192\\.168\\.228\\."

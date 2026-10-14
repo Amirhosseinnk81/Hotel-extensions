@@ -155,7 +155,7 @@
     var modalEl = document.getElementById('extensionDetailModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
     var modal = new bootstrap.Modal(modalEl);
-    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated'];
+    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus'];
 
     document.querySelectorAll('.extension-card').forEach(function (card) {
       card.addEventListener('click', function (e) {

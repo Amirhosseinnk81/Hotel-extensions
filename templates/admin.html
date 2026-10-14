@@ -12,6 +12,8 @@
   <div class="stat-card"><span class="stat-icon">🏢</span><strong>{{ stats.total_departments }}</strong><small>بخش‌ها</small></div>
   <div class="stat-card"><span class="stat-icon">🟢</span><strong>{{ stats.active_count }}</strong><small>فعال</small></div>
   <div class="stat-card"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>غیرفعال</small></div>
+  <div class="stat-card"><span class="stat-icon">🛏</span><strong>{{ stats.room_count }}</strong><small>اتاق مهمان (مخفی از پرسنل)</small></div>
+  {% if stats.pending_count %}<div class="stat-card"><span class="stat-icon">⏳</span><strong>{{ stats.pending_count }}</strong><small>در انتظار بررسی</small></div>{% endif %}
   <div class="stat-card">
     <span class="stat-icon">🕒</span>
     <strong class="stat-date">{{ (stats.last_updated | local_dt('%Y/%m/%d')) if stats.last_updated else '—' }}</strong>
@@ -30,6 +32,12 @@
       <input type="file" class="form-control form-control-sm" name="file" accept=".csv,.xlsx" required>
       <button class="btn btn-outline-primary btn-sm text-nowrap">پیش‌نمایش</button>
     </form>
+  </div>
+
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">⌗</span><h6>ایمپورت MAC تلفن‌ها</h6></div>
+    <p class="action-desc">از فایل Excel یا CSV؛ ستون‌ها را خودتان انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. فایل ناقص هم مشکلی ندارد.</p>
+    <a href="{{ url_for('mac_import') }}" class="btn btn-outline-primary btn-sm">شروع ایمپورت MAC</a>
   </div>
 
   <div class="action-card">
@@ -89,6 +97,8 @@
     <span class="chip chip-info">به‌روزرسانی موجود: <strong>{{ import_stats.existing_updates }}</strong></span>
     <span class="chip chip-warn">تکراری در فایل: <strong>{{ import_stats.duplicates }}</strong></span>
     <span class="chip chip-danger">خطا: <strong>{{ import_stats.errors }}</strong></span>
+    {% if import_stats.hidden %}<span class="chip chip-warn">مخفی از پرسنل (اتاق / در انتظار): <strong>{{ import_stats.hidden }}</strong></span>{% endif %}
+    {% if import_stats.warnings %}<span class="chip chip-danger">مقدار نامعتبر (نادیده گرفته می‌شود): <strong>{{ import_stats.warnings }}</strong></span>{% endif %}
   </div>
   <div class="d-flex gap-2 mt-3">
     <form action="{{ url_for('import_confirm') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-primary btn-sm">تأیید و ثبت نهایی</button></form>
@@ -130,10 +140,14 @@
   <form method="get" class="admin-search-bar">
     <div class="input-icon">
       <span class="input-icon-glyph">⌕</span>
-      <input name="q" value="{{ q }}" class="form-control" placeholder="جست‌وجو در داخلی‌ها (شماره، نام، عنوان، محل)…">
+      <input name="q" value="{{ q }}" class="form-control" placeholder="جست‌وجو (شماره، نام، عنوان، محل، IP یا MAC)…">
     </div>
+    <select name="kind" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+      <option value="">همه انواع</option>
+      {% for key, label in kind_labels.items() %}<option value="{{ key }}" {% if kind_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
     <button class="btn btn-primary btn-sm">جست‌وجو</button>
-    {% if q %}<a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">پاک کردن</a>{% endif %}
+    {% if q or kind_filter %}<a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">پاک کردن</a>{% endif %}
   </form>
 
   <form id="bulkForm" method="post" class="bulk-action-bar {{ '' if entries else 'd-none' }}">
@@ -149,18 +163,24 @@
       <thead>
         <tr>
           <th><input type="checkbox" id="selectAllRows" {{ '' if entries else 'disabled' }}></th>
-          <th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th></th>
+          <th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th>تلفن (IP / MAC)</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for e in entries %}
         <tr>
           <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm"></td>
-          <td class="fw-bold text-primary">{{ e.extension }}</td>
+          <td class="fw-bold text-primary">{{ e.extension }}{% if e.kind != 'staff' %}<small class="d-block"><span class="badge text-bg-{{ 'info' if e.kind == 'room' else 'warning' }}">{{ kind_labels[e.kind] }}</span></small>{% endif %}</td>
           <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
           <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
           <td>{{ e.location or '—' }}</td>
           <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span></td>
+          <td class="small">
+            {% set ps = phone_status(e) %}{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% endif %}
+            {% if e.last_ip %}<span class="d-block" dir="ltr">{{ e.last_ip }}</span>{% endif %}
+            {% if e.mac %}<span class="d-block text-muted" dir="ltr">{{ e.mac }}</span>{% endif %}
+            {% if not ps and not e.last_ip and not e.mac %}—{% endif %}
+          </td>
           <td class="text-nowrap">
             <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a>
             <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('این داخلی به سطل بازیافت منتقل شود؟')">
@@ -170,7 +190,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if q else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
+        <tr><td colspan="8" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if (q or kind_filter) else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

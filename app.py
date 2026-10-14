@@ -51,6 +51,26 @@ COMPROMISED_SECRET_KEY_HASHES = {
 # Passwords that ship with the project. Any account still using one of them
 # is forced to change it at next login.
 DEFAULT_PASSWORDS = ('admin123',)
+
+# Extension kinds. Only "staff" extensions are visible to the public (staff
+# directory); "room" (guest rooms) and "pending" (found on the PBX but not
+# reviewed yet) are visible to logged-in admins only.
+EXTENSION_KINDS = ('staff', 'room', 'pending')
+KIND_LABELS = {'staff': 'پرسنل / اداری', 'room': 'اتاق مهمان', 'pending': 'در انتظار بررسی'}
+KIND_ALIASES = {
+    'staff': 'staff', 'پرسنل': 'staff', 'اداری': 'staff', 'پرسنل / اداری': 'staff', 'پرسنل/اداری': 'staff',
+    'room': 'room', 'اتاق': 'room', 'اتاق مهمان': 'room', 'مهمان': 'room',
+    'pending': 'pending', 'در انتظار بررسی': 'pending', 'انتظار': 'pending',
+}
+# Guest-room extensions are <floor><room>: 201..227 on floor 2, 301..327 on
+# floor 3, ..., 1001..1027 on floor 10, ..., 2301..2327 on floor 23.
+ROOM_FLOOR_MIN = int(os.getenv('ROOM_FLOOR_MIN', '2'))
+ROOM_FLOOR_MAX = int(os.getenv('ROOM_FLOOR_MAX', '23'))
+ROOM_NUMBER_MAX = int(os.getenv('ROOM_NUMBER_MAX', '27'))
+# Phone status older than this many minutes is shown as "unknown".
+PBX_STATUS_STALE_MINUTES = int(os.getenv('PBX_STATUS_STALE_MINUTES', '10'))
+PHONE_STATUS_LABELS = {'online': 'تلفن آنلاین', 'offline': 'تلفن آفلاین', 'unknown': 'وضعیت تلفن نامشخص'}
+
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
@@ -161,6 +181,172 @@ def cell_text(value):
 
 def parse_present(value):
     return cell_text(value).lower() in ('حاضر', 'present', '1', 'true', 'yes', 'بله')
+
+
+def is_room_number(extension):
+    """True when the number follows the guest-room pattern (see ROOM_* settings)."""
+    ext = str(extension or '').strip()
+    if not re.fullmatch(r'[1-9][0-9]{2,3}', ext):
+        return False
+    floor, room = (int(ext[0]), int(ext[1:])) if len(ext) == 3 else (int(ext[:2]), int(ext[2:]))
+    return ROOM_FLOOR_MIN <= floor <= ROOM_FLOOR_MAX and 1 <= room <= ROOM_NUMBER_MAX
+
+
+def suggest_kind(extension):
+    return 'room' if is_room_number(extension) else 'staff'
+
+
+def parse_kind(value):
+    return KIND_ALIASES.get(cell_text(value).lower())
+
+
+def normalize_mac(value):
+    """Return the MAC as AA:BB:CC:DD:EE:FF, or None when it is empty or invalid.
+    Accepts ':' '-' '.' separators or none at all (any letter case)."""
+    text = cell_text(value)
+    if not text or re.search(r'[^0-9a-fA-F:\-.\s]', text):
+        return None
+    digits = re.sub(r'[^0-9a-fA-F]', '', text).lower()
+    if len(digits) != 12 or digits in ('000000000000', 'ffffffffffff'):
+        return None
+    return ':'.join(digits[i:i + 2] for i in range(0, 12, 2)).upper()
+
+
+def display_phone_status(entry):
+    """'online' / 'offline' / 'unknown', or None when there is no PBX data for the extension."""
+    if entry.status_updated_at is None or not entry.reg_status:
+        return None
+    if datetime.utcnow() - entry.status_updated_at > timedelta(minutes=PBX_STATUS_STALE_MINUTES):
+        return 'unknown'
+    return entry.reg_status if entry.reg_status in ('online', 'offline') else 'unknown'
+
+
+def parse_row_extras(row):
+    """Optional import columns (kind / mac / phone_model) -> (values, invalid_fields).
+    A blank cell never changes the stored value; an invalid one is ignored and reported."""
+    values, invalid = {}, []
+    if 'kind' in row:
+        raw = cell_text(row.get('kind'))
+        if raw:
+            kind = parse_kind(raw)
+            if kind:
+                values['kind'] = kind
+            else:
+                invalid.append('kind')
+    if 'mac' in row:
+        raw = cell_text(row.get('mac'))
+        if raw:
+            mac = normalize_mac(raw)
+            if mac:
+                values['mac'] = mac
+            else:
+                invalid.append('mac')
+    if 'phone_model' in row:
+        raw = cell_text(row.get('phone_model'))
+        if raw:
+            values['phone_model'] = raw[:60]
+    return values, invalid
+
+
+# ---- MAC import wizard helpers ------------------------------------------------
+MAC_ACTIONS_APPLIED = ('set', 'overwrite', 'create', 'same')
+MAC_ACTION_LABELS = {
+    'set': ('ثبت MAC جدید', 'success'),
+    'overwrite': ('جایگزینی MAC', 'warning'),
+    'create': ('ساخت داخلی جدید', 'info'),
+    'same': ('بدون تغییر', 'secondary'),
+    'skip_conflict': ('MAC متفاوتی ثبت است (رد شد)', 'danger'),
+    'invalid_mac': ('MAC نامعتبر', 'danger'),
+    'skip_missing': ('داخلی در دیتابیس نیست', 'secondary'),
+    'skip_deleted': ('داخلی در سطل بازیافت است', 'secondary'),
+    'skip_dup_ext': ('داخلی تکراری در فایل', 'secondary'),
+    'skip_empty_mac': ('MAC خالی', 'secondary'),
+    'skip_no_ext': ('شماره داخلی خالی', 'secondary'),
+}
+
+
+def _header_key(value):
+    text = cell_text(value).lower().replace('_', ' ').replace('-', ' ').replace('\u200c', ' ')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def col_letter(index):
+    letters, number = '', index + 1
+    while number:
+        number, rem = divmod(number - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
+def read_table(path, sheet_name=None, max_rows=5000):
+    """Read a CSV/XLSX file as raw rows -> (sheet_names, rows). No header assumptions."""
+    if path.lower().endswith('.csv'):
+        with open(path, 'rb') as f:
+            raw = f.read()
+        text = ''
+        for encoding in ('utf-8-sig', 'cp1256', 'latin-1'):
+            try:
+                text = raw.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=',;\t')
+        except csv.Error:
+            dialect = csv.excel
+        return [], list(csv.reader(io.StringIO(text), dialect))[:max_rows]
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        names = workbook.sheetnames
+        sheet = workbook[sheet_name] if sheet_name in names else workbook[names[0]]
+        rows = []
+        for row in sheet.iter_rows(values_only=True):
+            rows.append(list(row))
+            if len(rows) >= max_rows:
+                break
+        return names, rows
+    finally:
+        workbook.close()
+
+
+def prepare_table(rows, has_header):
+    """Drop empty rows (keeping original row numbers) -> (header, body [(row_no, cells)])."""
+    numbered = [(i + 1, list(r)) for i, r in enumerate(rows) if any(cell_text(c) for c in r)]
+    if has_header and numbered:
+        return numbered[0][1], numbered[1:]
+    return [], numbered
+
+
+def detect_mac_columns(header, body):
+    """Guess (ext_idx, mac_idx, model_idx): by header names first, then by cell contents."""
+    ncols = max([len(header)] + [len(cells) for _, cells in body[:300]] + [0])
+    keys = [_header_key(h) for h in header] + [''] * (ncols - len(header))
+    ext_idx = mac_idx = model_idx = None
+    for i, key in enumerate(keys):
+        if not key:
+            continue
+        if mac_idx is None and ('mac' in key or 'مک' in key):
+            mac_idx = i
+        elif ext_idx is None and ('extension' in key or 'داخلی' in key or key in ('ext', 'exten', 'number', 'no', 'شماره')):
+            ext_idx = i
+        elif model_idx is None and ('model' in key or 'مدل' in key):
+            model_idx = i
+    sample = body[:300]
+
+    def fraction(i, predicate):
+        values = [cell_text(cells[i]) for _, cells in sample if i < len(cells) and cell_text(cells[i])]
+        return sum(1 for v in values if predicate(v)) / len(values) if values else 0
+
+    if mac_idx is None and ncols:
+        best = max(range(ncols), key=lambda i: fraction(i, lambda v: normalize_mac(v) is not None))
+        if fraction(best, lambda v: normalize_mac(v) is not None) >= 0.5:
+            mac_idx = best
+    if ext_idx is None:
+        for i in range(ncols):
+            if i != mac_idx and fraction(i, lambda v: re.fullmatch(r'[0-9]{1,5}', v) is not None) >= 0.6:
+                ext_idx = i
+                break
+    return ext_idx, mac_idx, model_idx
 
 
 def make_db_backup(db_path):
@@ -289,6 +475,17 @@ class Extension(db.Model):
     mobile = db.Column(db.String(30))
     is_present = db.Column(db.Boolean, default=False, nullable=False)
     notes = db.Column(db.Text)
+    # staff = public directory, room = guest room, pending = unreviewed (both hidden from the public)
+    kind = db.Column(db.String(10), default='staff', nullable=False, index=True)
+    mac = db.Column(db.String(17), index=True)  # normalized AA:BB:CC:DD:EE:FF
+    phone_model = db.Column(db.String(60))
+    # Live data written by the PBX sync (admin-only; never shown publicly except the online/offline state)
+    reg_status = db.Column(db.String(10))  # online / offline
+    last_ip = db.Column(db.String(45))
+    rtt_ms = db.Column(db.Integer)
+    last_seen_at = db.Column(db.DateTime)
+    user_agent = db.Column(db.String(200))
+    status_updated_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False, index=True)
     deleted_at = db.Column(db.DateTime)
@@ -332,6 +529,22 @@ def _ensure_columns(engine):
         statements.append('ALTER TABLE department ADD COLUMN working_hours VARCHAR(120)')
     if 'must_change_password' not in existing_user_cols:
         statements.append('ALTER TABLE user ADD COLUMN must_change_password BOOLEAN DEFAULT 0 NOT NULL')
+    new_columns = (
+        ('kind', "VARCHAR(10) DEFAULT 'staff' NOT NULL"),
+        ('mac', 'VARCHAR(17)'),
+        ('phone_model', 'VARCHAR(60)'),
+        ('reg_status', 'VARCHAR(10)'),
+        ('last_ip', 'VARCHAR(45)'),
+        ('rtt_ms', 'INTEGER'),
+        ('last_seen_at', 'DATETIME'),
+        ('user_agent', 'VARCHAR(200)'),
+        ('status_updated_at', 'DATETIME'),
+    )
+    for column_name, column_type in new_columns:
+        if column_name not in existing_ext_cols:
+            statements.append(f'ALTER TABLE extension ADD COLUMN {column_name} {column_type}')
+    statements.append('CREATE INDEX IF NOT EXISTS ix_extension_kind ON extension (kind)')
+    statements.append('CREATE INDEX IF NOT EXISTS ix_extension_mac ON extension (mac)')
     if statements:
         with engine.begin() as conn:
             for stmt in statements:
@@ -367,6 +580,9 @@ def get_cached_stats():
             'inactive_count': Extension.query.filter_by(is_deleted=False, is_active=False).count(),
             'last_updated': db.session.query(func.max(Extension.updated_at)).filter(Extension.is_deleted == False).scalar(),
             'admin_count': User.query.count(),
+            'staff_count': Extension.query.filter_by(is_deleted=False, kind='staff').count(),
+            'room_count': Extension.query.filter_by(is_deleted=False, kind='room').count(),
+            'pending_count': Extension.query.filter_by(is_deleted=False, kind='pending').count(),
         }
         _stats_cache['version'] = _data_version
     return _stats_cache['data']
@@ -381,6 +597,90 @@ def get_cached_departments():
         _departments_cache['data'] = Department.query.order_by(Department.name).all()
         _departments_cache['version'] = _data_version
     return _departments_cache['data']
+
+
+def build_mac_plan(body, ext_idx, mac_idx, model_idx, overwrite=False, create_missing=False):
+    """Dry-run of a MAC import: one dict per data row describing what WOULD happen."""
+    existing = {e.extension: e for e in Extension.query.all()}
+    owners = {}
+    for e in existing.values():
+        if e.mac and not e.is_deleted:
+            owners.setdefault(e.mac, set()).add(e.extension)
+
+    def cell(cells, idx):
+        return cell_text(cells[idx]) if idx is not None and idx < len(cells) else ''
+
+    plan, seen_ext = [], {}
+    for row_no, cells in body:
+        ext, raw_mac, model = cell(cells, ext_idx), cell(cells, mac_idx), cell(cells, model_idx)
+        if not ext and not raw_mac:
+            continue
+        item = {'row': row_no, 'ext': ext, 'mac_raw': raw_mac, 'mac': None, 'model': model, 'action': '', 'note': ''}
+        if not ext:
+            item['action'] = 'skip_no_ext'
+        elif not raw_mac:
+            item['action'] = 'skip_empty_mac'
+        else:
+            mac = normalize_mac(raw_mac)
+            item['mac'] = mac
+            if not mac:
+                item['action'] = 'invalid_mac'
+            elif ext in seen_ext:
+                item['action'] = 'skip_dup_ext'
+                item['note'] = f'قبلاً در ردیف {seen_ext[ext]} آمده است'
+            else:
+                seen_ext[ext] = row_no
+                entry = existing.get(ext)
+                if entry is None:
+                    item['action'] = 'create' if create_missing else 'skip_missing'
+                    if create_missing:
+                        item['note'] = 'نوع: ' + KIND_LABELS['room' if is_room_number(ext) else 'pending']
+                elif entry.is_deleted:
+                    item['action'] = 'skip_deleted'
+                elif not entry.mac:
+                    item['action'] = 'set'
+                elif entry.mac == mac:
+                    item['action'] = 'same'
+                else:
+                    item['action'] = 'overwrite' if overwrite else 'skip_conflict'
+                    item['note'] = f'MAC فعلی: {entry.mac}'
+        plan.append(item)
+
+    file_owners = {}
+    for item in plan:
+        if item['mac'] and item['action'] in ('set', 'overwrite', 'create'):
+            file_owners.setdefault(item['mac'], set()).add(item['ext'])
+    for item in plan:
+        if item['mac'] and item['action'] in ('set', 'overwrite', 'create', 'same'):
+            others = (owners.get(item['mac'], set()) | file_owners.get(item['mac'], set())) - {item['ext']}
+            if others:
+                item['shared'] = True
+                item['note'] = (item['note'] + ' — ' if item['note'] else '') + 'همین MAC روی داخلی ' + '، '.join(sorted(others)) + ' هم هست'
+    return plan
+
+
+def apply_mac_plan(plan, overwrite=False):
+    """Write a plan produced by build_mac_plan to the database (caller commits)."""
+    counts = {'set': 0, 'overwrite': 0, 'create': 0, 'model': 0}
+    for item in plan:
+        action = item['action']
+        if action not in MAC_ACTIONS_APPLIED:
+            continue
+        entry = Extension.query.filter_by(extension=item['ext']).first()
+        if action == 'create':
+            kind = suggest_kind(item['ext'])
+            entry = Extension(extension=item['ext'], title=('اتاق ' if kind == 'room' else 'داخلی ') + item['ext'],
+                              kind='room' if kind == 'room' else 'pending', is_active=True)
+            db.session.add(entry)
+        if entry is None:
+            continue
+        if action in ('set', 'overwrite', 'create'):
+            entry.mac = item['mac']
+            counts[action] += 1
+        if item['model'] and (action == 'create' or not entry.phone_model or overwrite):
+            entry.phone_model = item['model'][:60]
+            counts['model'] += 1
+    return counts
 
 
 def create_app():
@@ -417,6 +717,9 @@ def create_app():
         return app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
 
     app.jinja_env.globals['can_see_contact'] = can_see_contact
+    app.jinja_env.globals['phone_status'] = display_phone_status
+    app.jinja_env.globals['phone_status_labels'] = PHONE_STATUS_LABELS
+    app.jinja_env.globals['kind_labels'] = KIND_LABELS
     app.jinja_env.globals['data_version'] = lambda: _data_version
     app.jinja_env.filters['local_dt'] = format_local_datetime
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
@@ -512,7 +815,9 @@ def create_app():
             sort_dir = 'asc'
         sort_value = f'{sort_field}:{sort_dir}'
 
-        entries = Extension.query.filter_by(is_deleted=False)
+        # Public list: staff/office extensions only. Guest-room and unreviewed
+        # extensions must never reach the public page, search, PDF or exports.
+        entries = Extension.query.filter_by(is_deleted=False, kind='staff')
         if query:
             pattern = f'%{query}%'
             conditions = [Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern)]
@@ -573,6 +878,7 @@ def create_app():
         return render_template(
             'index.html',
             entries=page_entries,
+            show_phone_status=any(display_phone_status(e) for e in page_entries),
             departments=get_cached_departments(),
             query=request.args.get('q', '').strip(),
             selected_department=request.args.get('department', type=int),
@@ -592,16 +898,26 @@ def create_app():
     @login_required
     def admin():
         q = request.args.get('q', '').strip()
+        kind_filter = request.args.get('kind', '')
+        if kind_filter not in EXTENSION_KINDS:
+            kind_filter = ''
         entries_query = Extension.query.filter_by(is_deleted=False)
+        if kind_filter:
+            entries_query = entries_query.filter_by(kind=kind_filter)
         if q:
             pattern = f'%{q}%'
-            entries_query = entries_query.filter(or_(Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern)))
+            conditions = [Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern), Extension.last_ip.ilike(pattern)]
+            mac_digits = re.sub(r'[^0-9a-fA-F]', '', q)
+            if len(mac_digits) >= 4:  # admins can search by MAC with or without separators
+                conditions.append(func.replace(Extension.mac, ':', '').ilike(f'%{mac_digits}%'))
+            entries_query = entries_query.filter(or_(*conditions))
         entries = entries_query.order_by(Extension.extension).all()
         return render_template(
             'admin.html',
             entries=entries,
             departments=Department.query.order_by(Department.name).all(),
             q=q,
+            kind_filter=kind_filter,
             import_stats=session.get('import_stats'),
             import_filename=session.get('import_original_name'),
             stats=get_cached_stats(),
@@ -735,6 +1051,13 @@ def create_app():
             else:
                 flash('این شماره داخلی قبلاً ثبت شده است.', 'danger')
             return redirect(request.url)
+        mac_raw = request.form.get('mac', '').strip()
+        mac = normalize_mac(mac_raw) if mac_raw else None
+        if mac_raw and not mac:
+            flash('MAC نامعتبر است. مثال درست: 00:15:65:AA:BB:CC', 'danger')
+            return redirect(request.url)
+        kind_choice = request.form.get('kind', 'auto')
+        kind = kind_choice if kind_choice in EXTENSION_KINDS else suggest_kind(extension_no)
         is_new = entry is None
         entry = entry or Extension()
         entry.extension = extension_no
@@ -747,11 +1070,20 @@ def create_app():
         entry.notes = request.form.get('notes', '').strip() or None
         entry.is_active = request.form.get('is_active') == 'on'
         entry.is_present = request.form.get('is_present') == 'on'
+        entry.kind = kind
+        entry.mac = mac
+        entry.phone_model = request.form.get('phone_model', '').strip()[:60] or None
         db.session.add(entry)
         log_activity('created' if is_new else 'updated', 'extension', f'{extension_no} — {title}')
         bump_data_version()
         db.session.commit()
         flash('داخلی با موفقیت ذخیره شد.', 'success')
+        if kind != 'staff':
+            flash(f'نوع این داخلی «{KIND_LABELS[kind]}» است و برای پرسنل نمایش داده نمی‌شود. اگر داخلی اداری است، نوع را «پرسنل / اداری» بگذارید.', 'warning')
+        if mac:
+            shared = Extension.query.filter(Extension.mac == mac, Extension.id != entry.id, Extension.is_deleted == False).all()
+            if shared:
+                flash('همین MAC روی داخلی ' + '، '.join(x.extension for x in shared) + ' هم ثبت شده است. اگر یک تلفن چند خط دارد مشکلی نیست؛ در غیر این‌صورت بررسی کنید.', 'warning')
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/delete', methods=['POST'])
@@ -918,7 +1250,7 @@ def create_app():
     @login_required
     def export_data(fmt):
         entries = Extension.query.filter_by(is_deleted=False).order_by(Extension.extension).all()
-        response = build_tabular_export(fmt, entries, include_contact=True)
+        response = build_tabular_export(fmt, entries, include_contact=True, include_network=True)
         if response is None:
             return 'فرمت نامعتبر است.', 404
         return response
@@ -953,7 +1285,8 @@ def create_app():
     @login_required
     def export_pdf():
         department_id = request.args.get('department_id', type=int)
-        entries_query = Extension.query.filter_by(is_deleted=False)
+        # The printed directory lists staff/office extensions only (no guest rooms).
+        entries_query = Extension.query.filter_by(is_deleted=False, kind='staff')
         if department_id:
             entries_query = entries_query.filter_by(department_id=department_id)
         entries = entries_query.order_by(Extension.extension).all()
@@ -992,6 +1325,8 @@ def create_app():
         errors = 0
         duplicates_in_file = 0
         existing_updates = 0
+        hidden = 0
+        warnings = 0
         seen_in_file = set()
         for row in rows:
             extension_no = str(row.get('extension', '')).strip()
@@ -1004,8 +1339,14 @@ def create_app():
                 duplicates_in_file += 1
             else:
                 seen_in_file.add(extension_no)
-            if Extension.query.filter_by(extension=extension_no).first():
+            existing = Extension.query.filter_by(extension=extension_no).first()
+            if existing:
                 existing_updates += 1
+            extras, invalid_fields = parse_row_extras(row)
+            warnings += len(invalid_fields)
+            final_kind = extras.get('kind') or (existing.kind if existing else suggest_kind(extension_no))
+            if final_kind != 'staff':
+                hidden += 1
 
         token = uuid.uuid4().hex
         file_ext = os.path.splitext(file.filename)[1] or '.csv'
@@ -1022,6 +1363,8 @@ def create_app():
             'duplicates': duplicates_in_file,
             'existing_updates': existing_updates,
             'new_records': valid - duplicates_in_file - existing_updates,
+            'hidden': hidden,
+            'warnings': warnings,
         }
         return redirect(url_for('admin'))
 
@@ -1051,7 +1394,8 @@ def create_app():
                         continue
                     department_name = str(row.get('department', '')).strip()
                     department = get_or_create_department(department_name) if department_name else None
-                    item = Extension.query.filter_by(extension=extension_no).first() or Extension(extension=extension_no)
+                    existing = Extension.query.filter_by(extension=extension_no).first()
+                    item = existing or Extension(extension=extension_no)
                     item.title = title
                     item.person_name = str(row.get('person_name', '')).strip() or None
                     item.department = department
@@ -1065,6 +1409,17 @@ def create_app():
                         item.mobile = cell_text(row.get('mobile')) or None
                     if 'present' in row:
                         item.is_present = parse_present(row.get('present'))
+                    # kind / mac / phone_model: blank or invalid cells leave the stored value alone.
+                    # A brand-new extension gets its kind from the guest-room number pattern.
+                    extras, _invalid = parse_row_extras(row)
+                    if 'kind' in extras:
+                        item.kind = extras['kind']
+                    elif existing is None:
+                        item.kind = suggest_kind(extension_no)
+                    if 'mac' in extras:
+                        item.mac = extras['mac']
+                    if 'phone_model' in extras:
+                        item.phone_model = extras['phone_model']
                     item.is_active = str(row.get('status', 'فعال')).strip() not in ('غیرفعال', 'inactive', '0', 'False')
                     item.is_deleted = False
                     item.deleted_at = None
@@ -1098,17 +1453,143 @@ def create_app():
                     pass
         return redirect(url_for('admin'))
 
+    # ---- MAC import wizard: upload -> pick columns / preview -> apply -------------
+    def find_mac_temp(token):
+        if not token or not re.fullmatch(r'[0-9a-f]{32}', token):
+            return None
+        matches = glob.glob(os.path.join(IMPORT_TMP_DIR, f'mac_{token}.*'))
+        return matches[0] if matches else None
+
+    def clear_mac_temp():
+        token = session.pop('mac_token', None)
+        session.pop('mac_filename', None)
+        path = find_mac_temp(token)
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def load_mac_context(path):
+        """Read the uploaded file and compute the dry-run for the column choices in the request."""
+        def int_arg(name):
+            value = request.values.get(name, '').strip()
+            return int(value) if value.isdigit() else None
+
+        try:
+            sheetnames, rows = read_table(path, request.values.get('sheet') or None)
+        except Exception:
+            return None
+        configured = request.values.get('configured') == '1'
+        first_row = next((r for r in rows if any(cell_text(c) for c in r)), [])
+        has_header = (request.values.get('has_header') == '1') if configured else not any(normalize_mac(c) for c in first_row)
+        header, body = prepare_table(rows, has_header)
+        auto_ext, auto_mac, auto_model = detect_mac_columns(header, body)
+        if configured:
+            ext_idx, mac_idx, model_idx = int_arg('ext_col'), int_arg('mac_col'), int_arg('model_col')
+        else:
+            ext_idx, mac_idx, model_idx = auto_ext, auto_mac, auto_model
+        ncols = max([len(header)] + [len(cells) for _, cells in body] + [0])
+        columns = []
+        for i in range(ncols):
+            title = cell_text(header[i]) if i < len(header) else ''
+            columns.append((i, f'{col_letter(i)}: {title}' if title else f'ستون {col_letter(i)}'))
+        overwrite = configured and request.values.get('overwrite') == '1'
+        create_missing = configured and request.values.get('create_missing') == '1'
+        plan = build_mac_plan(body, ext_idx, mac_idx, model_idx, overwrite, create_missing) if ext_idx is not None and mac_idx is not None else []
+        summary = {}
+        for item in plan:
+            summary[item['action']] = summary.get(item['action'], 0) + 1
+        return {
+            'sheetnames': sheetnames, 'sheet': request.values.get('sheet') or (sheetnames[0] if sheetnames else ''),
+            'has_header': has_header, 'columns': columns, 'ext_idx': ext_idx, 'mac_idx': mac_idx, 'model_idx': model_idx,
+            'overwrite': overwrite, 'create_missing': create_missing, 'plan': plan, 'summary': summary,
+            'shared_count': sum(1 for item in plan if item.get('shared')),
+            'apply_count': sum(1 for item in plan if item['action'] in ('set', 'overwrite', 'create')),
+        }
+
+    @app.route(f'/{admin_prefix}/mac-import')
+    @login_required
+    def mac_import():
+        _cleanup_stale_imports()
+        path = find_mac_temp(session.get('mac_token'))
+        if not path:
+            return render_template('mac_import.html', stage='upload')
+        ctx = load_mac_context(path)
+        if ctx is None:
+            clear_mac_temp()
+            flash('فایل قابل خواندن نیست. یک فایل Excel (.xlsx) یا CSV معتبر انتخاب کنید.', 'danger')
+            return render_template('mac_import.html', stage='upload')
+        show = 'issues' if request.values.get('show') == 'issues' else 'all'
+        shown = [item for item in ctx['plan'] if show == 'all' or item['action'] not in MAC_ACTIONS_APPLIED or item.get('shared')]
+        return render_template('mac_import.html', stage='map', filename=session.get('mac_filename', ''), show=show,
+                               shown=shown[:500], shown_total=len(shown), action_labels=MAC_ACTION_LABELS, **ctx)
+
+    @app.route(f'/{admin_prefix}/mac-import/upload', methods=['POST'])
+    @login_required
+    def mac_import_upload():
+        _cleanup_stale_imports()
+        file = request.files.get('file')
+        if not file or not file.filename:
+            flash('فایلی انتخاب نشده است.', 'danger')
+            return redirect(url_for('mac_import'))
+        if not file.filename.lower().endswith(('.csv', '.xlsx')):
+            flash('فقط فایل CSV یا XLSX پذیرفته می‌شود.', 'danger')
+            return redirect(url_for('mac_import'))
+        clear_mac_temp()
+        token = uuid.uuid4().hex
+        file.save(os.path.join(IMPORT_TMP_DIR, f'mac_{token}{os.path.splitext(file.filename)[1].lower()}'))
+        session['mac_token'] = token
+        session['mac_filename'] = file.filename
+        return redirect(url_for('mac_import'))
+
+    @app.route(f'/{admin_prefix}/mac-import/apply', methods=['POST'])
+    @login_required
+    def mac_import_apply():
+        path = find_mac_temp(session.get('mac_token'))
+        ctx = load_mac_context(path) if path else None
+        if ctx is None:
+            flash('فایل پیدا نشد؛ دوباره آپلود کنید.', 'danger')
+            return redirect(url_for('mac_import'))
+        if ctx['ext_idx'] is None or ctx['mac_idx'] is None:
+            flash('ستون شماره داخلی و ستون MAC را انتخاب کنید.', 'danger')
+            return redirect(url_for('mac_import'))
+        try:
+            counts = apply_mac_plan(ctx['plan'], overwrite=ctx['overwrite'])
+            applied = counts['set'] + counts['overwrite'] + counts['create']
+            log_activity('imported', 'extension', f'ایمپورت MAC ({applied} داخلی)', details=session.get('mac_filename', '')[:300])
+            bump_data_version()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception('MAC import failed')
+            flash('ثبت MAC ناموفق بود. جزئیات در لاگ سرور ثبت شد.', 'danger')
+            return redirect(url_for('mac_import'))
+        clear_mac_temp()
+        flash(f"MAC برای {applied} داخلی ثبت شد ({counts['set']} جدید، {counts['overwrite']} جایگزین، {counts['create']} داخلی تازه‌ساخته)."
+              + (f" مدل تلفن برای {counts['model']} داخلی ثبت شد." if counts['model'] else ''), 'success')
+        return redirect(url_for('admin'))
+
+    @app.route(f'/{admin_prefix}/mac-import/cancel', methods=['POST'])
+    @login_required
+    def mac_import_cancel():
+        clear_mac_temp()
+        return redirect(url_for('admin'))
+
     return app
 
 
-def export_headers(include_contact=False):
+def export_headers(include_contact=False, include_network=False):
     columns = ['extension', 'title', 'person_name', 'department', 'location']
     if include_contact:
         columns += ['email', 'mobile']
-    return columns + ['notes', 'status', 'present']
+    columns += ['notes', 'status', 'present']
+    if include_network:
+        columns += ['kind', 'mac', 'phone_model']
+    return columns
 
 
-def export_rows(entries, include_contact=False):
+def export_rows(entries, include_contact=False, include_network=False):
     rows = []
     for e in entries:
         row = {'extension': e.extension, 'title': e.title, 'person_name': e.person_name or '', 'department': e.department.name if e.department else '', 'location': e.location or ''}
@@ -1118,22 +1599,26 @@ def export_rows(entries, include_contact=False):
         row['notes'] = e.notes or ''
         row['status'] = 'فعال' if e.is_active else 'غیرفعال'
         row['present'] = 'حاضر' if e.is_present else 'خارج از شیفت'
+        if include_network:
+            row['kind'] = e.kind
+            row['mac'] = e.mac or ''
+            row['phone_model'] = e.phone_model or ''
         rows.append(row)
     return rows
 
 
-def build_tabular_export(fmt, entries, include_contact=False):
+def build_tabular_export(fmt, entries, include_contact=False, include_network=False):
     """Build a CSV/XLSX send_file response for the given entries, or None for an unknown format.
-    E-mail / mobile columns are included only when include_contact is true."""
-    rows = export_rows(entries, include_contact)
+    E-mail / mobile columns need include_contact; kind / MAC / phone model need include_network (admin only)."""
+    rows = export_rows(entries, include_contact, include_network)
     if fmt == 'csv':
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=export_headers(include_contact))
+        writer = csv.DictWriter(buffer, fieldnames=export_headers(include_contact, include_network))
         writer.writeheader(); writer.writerows(rows)
         return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name='hotel_extensions.csv')
     if fmt == 'xlsx':
         wb = Workbook(); ws = wb.active; ws.title = 'Internals'
-        ws.append(export_headers(include_contact))
+        ws.append(export_headers(include_contact, include_network))
         for row in rows: ws.append(list(row.values()))
         ws.freeze_panes = 'A2'; ws.auto_filter.ref = ws.dimensions
         for column in ws.columns:

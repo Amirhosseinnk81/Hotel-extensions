@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}ایمپورت MAC تلفن‌ها{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">ایمپورت MAC تلفن‌ها</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+</div>
+
+{% if stage == 'upload' %}
+<div class="panel">
+  <h5 class="mb-2">۱. فایل را انتخاب کنید</h5>
+  <p class="text-muted mb-3">یک فایل Excel (‎.xlsx‎) یا CSV که شمارهٔ داخلی و MAC تلفن‌ها را دارد. ستون‌ها را در مرحلهٔ بعد انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. ردیف‌های خالی یا ناقص اشکالی ندارند و فقط ردیف‌های کامل اعمال می‌شوند.</p>
+  <form action="{{ url_for('mac_import_upload') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="file" class="form-control form-control-sm w-auto" name="file" accept=".csv,.xlsx" required>
+    <button class="btn btn-primary btn-sm text-nowrap">آپلود و ادامه</button>
+  </form>
+</div>
+
+{% else %}
+<div class="panel mb-4">
+  <h5 class="mb-3">۲. ستون‌ها و گزینه‌ها <small class="text-muted">— {{ filename }}</small></h5>
+  <form method="get" action="{{ url_for('mac_import') }}" class="row g-3 align-items-end">
+    <input type="hidden" name="configured" value="1">
+    {% if sheetnames|length > 1 %}
+    <div class="col-md-3">
+      <label class="form-label">برگه (Sheet)</label>
+      <select name="sheet" class="form-select form-select-sm">
+        {% for name in sheetnames %}<option value="{{ name }}" {% if name == sheet %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-md-3">
+      <label class="form-label">ستون شمارهٔ داخلی *</label>
+      <select name="ext_col" class="form-select form-select-sm">
+        <option value="">انتخاب نشده</option>
+        {% for i, label in columns %}<option value="{{ i }}" {% if ext_idx == i %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">ستون MAC *</label>
+      <select name="mac_col" class="form-select form-select-sm">
+        <option value="">انتخاب نشده</option>
+        {% for i, label in columns %}<option value="{{ i }}" {% if mac_idx == i %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">ستون مدل تلفن (اختیاری)</label>
+      <select name="model_col" class="form-select form-select-sm">
+        <option value="">ندارد</option>
+        {% for i, label in columns %}<option value="{{ i }}" {% if model_idx == i %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-12 d-flex flex-wrap gap-4">
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="has_header" id="hasHeader" value="1" {% if has_header %}checked{% endif %}><label class="form-check-label" for="hasHeader">ردیف اول عنوان ستون‌هاست</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="overwrite" id="ow" value="1" {% if overwrite %}checked{% endif %}><label class="form-check-label" for="ow">اگر MAC دیگری ثبت است، جایگزین شود</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="create_missing" id="cm" value="1" {% if create_missing %}checked{% endif %}><label class="form-check-label" for="cm">داخلی‌های ناموجود ساخته شوند (اتاق‌ها به‌صورت اتاق مهمان، بقیه «در انتظار بررسی» و مخفی از پرسنل)</label></div>
+    </div>
+    <div class="col-12 d-flex gap-2 flex-wrap align-items-center">
+      <select name="show" class="form-select form-select-sm w-auto">
+        <option value="all" {% if show == 'all' %}selected{% endif %}>نمایش همهٔ ردیف‌ها</option>
+        <option value="issues" {% if show == 'issues' %}selected{% endif %}>فقط موارد مشکل‌دار / ردشده</option>
+      </select>
+      <button class="btn btn-outline-primary btn-sm">به‌روزرسانی پیش‌نمایش</button>
+    </div>
+  </form>
+</div>
+
+{% if ext_idx is none or mac_idx is none %}
+  <div class="alert alert-warning">ستون شمارهٔ داخلی و ستون MAC را انتخاب کنید و «به‌روزرسانی پیش‌نمایش» را بزنید.</div>
+{% else %}
+<div class="panel mb-4">
+  <h5 class="mb-3">۳. پیش‌نمایش نتیجه</h5>
+  <div class="import-stat-chips mb-3">
+    <span class="chip chip-good">MAC جدید: <strong>{{ summary.get('set', 0) }}</strong></span>
+    {% if summary.get('overwrite') %}<span class="chip chip-warn">جایگزینی: <strong>{{ summary.get('overwrite') }}</strong></span>{% endif %}
+    {% if summary.get('create') %}<span class="chip chip-info">داخلی جدید: <strong>{{ summary.get('create') }}</strong></span>{% endif %}
+    <span class="chip">بدون تغییر: <strong>{{ summary.get('same', 0) }}</strong></span>
+    {% if summary.get('skip_conflict') %}<span class="chip chip-danger">MAC متفاوت (رد شد): <strong>{{ summary.get('skip_conflict') }}</strong></span>{% endif %}
+    {% if summary.get('invalid_mac') %}<span class="chip chip-danger">MAC نامعتبر: <strong>{{ summary.get('invalid_mac') }}</strong></span>{% endif %}
+    {% if summary.get('skip_missing') %}<span class="chip chip-warn">داخلی در دیتابیس نیست: <strong>{{ summary.get('skip_missing') }}</strong></span>{% endif %}
+    {% if summary.get('skip_deleted') %}<span class="chip chip-warn">در سطل بازیافت: <strong>{{ summary.get('skip_deleted') }}</strong></span>{% endif %}
+    {% if summary.get('skip_dup_ext') %}<span class="chip chip-warn">تکراری در فایل: <strong>{{ summary.get('skip_dup_ext') }}</strong></span>{% endif %}
+    {% if summary.get('skip_empty_mac') %}<span class="chip">MAC خالی: <strong>{{ summary.get('skip_empty_mac') }}</strong></span>{% endif %}
+    {% if shared_count %}<span class="chip chip-warn">MAC مشترک بین چند داخلی: <strong>{{ shared_count }}</strong></span>{% endif %}
+  </div>
+
+  <div class="table-responsive" style="max-height:480px;overflow:auto">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>ردیف</th><th>داخلی</th><th>MAC در فایل</th><th>MAC نرمال‌شده</th><th>مدل</th><th>نتیجه</th><th>توضیح</th></tr></thead>
+      <tbody>
+        {% for item in shown %}
+        {% set lab = action_labels[item.action] %}
+        <tr>
+          <td>{{ item.row }}</td>
+          <td class="fw-bold" dir="ltr">{{ item.ext or '—' }}</td>
+          <td dir="ltr">{{ item.mac_raw or '—' }}</td>
+          <td dir="ltr">{{ item.mac or '—' }}</td>
+          <td dir="ltr">{{ item.model or '—' }}</td>
+          <td><span class="badge text-bg-{{ lab[1] }}">{{ lab[0] }}</span>{% if item.shared %} <span title="MAC مشترک">⚠</span>{% endif %}</td>
+          <td class="small text-muted">{{ item.note }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center py-3 text-muted">ردیفی برای نمایش نیست.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if shown_total > shown|length %}<p class="small text-muted mt-2 mb-0">فقط {{ shown|length }} ردیف از {{ shown_total }} ردیف نمایش داده شد؛ همهٔ ردیف‌ها اعمال می‌شوند.</p>{% endif %}
+
+  <div class="d-flex gap-2 mt-3">
+    <form action="{{ url_for('mac_import_apply') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="configured" value="1">
+      {% if sheet %}<input type="hidden" name="sheet" value="{{ sheet }}">{% endif %}
+      {% if has_header %}<input type="hidden" name="has_header" value="1">{% endif %}
+      <input type="hidden" name="ext_col" value="{{ ext_idx }}">
+      <input type="hidden" name="mac_col" value="{{ mac_idx }}">
+      {% if model_idx is not none %}<input type="hidden" name="model_col" value="{{ model_idx }}">{% endif %}
+      {% if overwrite %}<input type="hidden" name="overwrite" value="1">{% endif %}
+      {% if create_missing %}<input type="hidden" name="create_missing" value="1">{% endif %}
+      <button class="btn btn-primary btn-sm" {% if not apply_count and not summary.get('same') %}disabled{% endif %}>اعمال تغییرات ({{ apply_count }} داخلی)</button>
+    </form>
+    <form action="{{ url_for('mac_import_cancel') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-secondary btn-sm">انصراف</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
