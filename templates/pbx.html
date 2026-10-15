@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}اتصال به PBX (ایزابل){% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">اتصال به PBX (ایزابل)</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+</div>
+
+<div class="panel mb-4">
+  {% if not cfg.enabled %}
+    <div class="alert alert-warning mb-0">اتصال به PBX تنظیم نشده است. متغیرهای محیطی <code>PBX_AMI_HOST</code>، <code>PBX_AMI_USER</code> و <code>PBX_AMI_SECRET</code> را ست کنید (راهنما در DEPLOYMENT.md) و برنامه را ری‌استارت کنید.</div>
+  {% else %}
+    <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center">
+      <div class="small">
+        <div>سرور: <span dir="ltr">{{ cfg.host }}:{{ cfg.port }}</span> · بروزرسانی هر {{ cfg.interval }} ثانیه</div>
+        <div>آخرین همگام‌سازی موفق: {% if state.last_success %}{{ state.last_success | local_dt }}{% if state.last_duration %} ({{ '%.1f'|format(state.last_duration) }} ثانیه){% endif %}{% else %}هنوز انجام نشده{% endif %}</div>
+        {% if state.last_error %}<div class="text-danger mt-1">آخرین خطا: <span dir="ltr">{{ state.last_error }}</span></div>{% endif %}
+      </div>
+      <form method="post" action="{{ url_for('pbx_sync_now') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary btn-sm">همگام‌سازی الان</button>
+      </form>
+    </div>
+    {% if state.summary %}
+    <div class="import-stat-chips mt-3">
+      <span class="chip">داخلی‌های دیده‌شده روی PBX: <strong>{{ state.summary.extensions }}</strong></span>
+      {% if state.summary.created %}<span class="chip chip-warn">جدید در آخرین بار: <strong>{{ state.summary.created }}</strong></span>{% endif %}
+      {% if state.summary.ignored %}<span class="chip">نادیده (غیرداخلی، مثل ترانک): <strong>{{ state.summary.ignored }}</strong></span>{% endif %}
+      {% if state.summary.in_trash %}<span class="chip">در سطل بازیافت: <strong>{{ state.summary.in_trash }}</strong></span>{% endif %}
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="panel mb-4">
+  <h5 class="mb-3">وضعیت تلفن‌ها به تفکیک نوع</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>نوع</th><th>آنلاین</th><th>آفلاین</th><th>نامشخص</th><th>بدون داده</th></tr></thead>
+      <tbody>
+        {% for kind, row in table.items() %}
+        <tr><td>{{ kind_labels[kind] }}</td><td><span class="phone-pill online">{{ row.online }}</span></td><td><span class="phone-pill offline">{{ row.offline }}</span></td><td><span class="phone-pill unknown">{{ row.unknown }}</span></td><td>{{ row.none }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-muted mt-2 mb-0">«بدون داده» یعنی این داخلی هنوز از PBX خوانده نشده یا روی PBX وجود ندارد. وضعیت‌ها طبق آخرین همگام‌سازی هستند.</p>
+</div>
+
+{% if pending %}
+<div class="panel mb-4">
+  <h5 class="mb-1">داخلی‌های جدید در انتظار تأیید ({{ pending|length }})</h5>
+  <p class="small text-muted">این داخلی‌ها روی PBX هستند ولی در دفترچه نیستند و فعلاً از پرسنل مخفی‌اند. نوعشان را مشخص کنید؛ برای ویرایش عنوان و بخش از «ویرایش» استفاده کنید.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>داخلی</th><th>IP</th><th>مدل تلفن</th><th>آخرین وضعیت</th><th></th></tr></thead>
+      <tbody>
+        {% for e in pending %}
+        {% set ps = phone_status(e) %}
+        <tr>
+          <td class="fw-bold">{{ e.extension }}</td>
+          <td dir="ltr">{{ e.last_ip or '—' }}</td>
+          <td dir="ltr">{{ e.phone_model or e.user_agent or '—' }}</td>
+          <td>{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% else %}—{% endif %}</td>
+          <td class="text-nowrap">
+            <form method="post" action="{{ url_for('pbx_set_kind') }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ e.id }}">
+              <button name="kind" value="staff" class="btn btn-outline-primary btn-sm">پرسنل / اداری</button>
+              <button name="kind" value="room" class="btn btn-outline-secondary btn-sm">اتاق مهمان</button>
+            </form>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('edit_extension', entry_id=e.id) }}">ویرایش</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if offline %}
+<div class="panel mb-4">
+  <h5 class="mb-3">تلفن‌های آفلاین ({{ offline|length }}{% if offline|length >= 300 %}+{% endif %})</h5>
+  <div class="table-responsive" style="max-height:420px;overflow:auto">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>داخلی</th><th>نوع</th><th>عنوان</th><th>آخرین IP</th><th>آخرین بار آنلاین</th></tr></thead>
+      <tbody>
+        {% for e in offline %}
+        <tr><td class="fw-bold">{{ e.extension }}</td><td>{{ kind_labels[e.kind] }}</td><td>{{ e.title }}</td><td dir="ltr">{{ e.last_ip or '—' }}</td><td>{% if e.last_seen_at %}{{ e.last_seen_at | local_dt }}{% else %}—{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if has_synced and not_on_pbx %}
+<div class="panel mb-4">
+  <h5 class="mb-1">در دفترچه هست ولی روی PBX دیده نشد ({{ not_on_pbx|length }})</h5>
+  <p class="small text-muted">ممکن است شمارهٔ قدیمی، خط خارجی یا داخلی‌ای باشد که از PBX حذف شده.</p>
+  <div class="d-flex flex-wrap gap-2">
+    {% for e in not_on_pbx %}<span class="chip" title="{{ e.title }}">{{ e.extension }}</span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if mismatches %}
+<div class="panel mb-4">
+  <h5 class="mb-1">MAC ثبت‌شده با MAC تلفن فرق دارد ({{ mismatches|length }})</h5>
+  <p class="small text-muted">MAC داخل User-Agent خود تلفن (مثل Htek) با MAC ثبت‌شده در دیتابیس یکی نیست؛ شاید تلفن عوض شده یا MAC اشتباه ثبت شده.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>داخلی</th><th>MAC ثبت‌شده</th><th>MAC خود تلفن</th></tr></thead>
+      <tbody>
+        {% for e, ua_mac in mismatches %}
+        <tr><td class="fw-bold">{{ e.extension }}</td><td dir="ltr">{{ e.mac }}</td><td dir="ltr">{{ ua_mac }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

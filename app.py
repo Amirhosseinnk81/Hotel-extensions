@@ -8,6 +8,8 @@ import re
 import secrets
 import sqlite3
 import tempfile
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -34,6 +36,9 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, PageTemplate, Paragraph, Spacer, Table, TableStyle
 from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
+from sqlalchemy.orm.attributes import flag_modified
+
+from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -683,6 +688,171 @@ def apply_mac_plan(plan, overwrite=False):
     return counts
 
 
+# ---- PBX sync (Issabel / Asterisk over AMI, read-only) ---------------------------------
+# Off unless PBX_AMI_HOST, PBX_AMI_USER and PBX_AMI_SECRET are set. The secret only ever
+# lives in the environment. State is per process, so run a single worker (see DEPLOYMENT.md).
+PBX_EXTENSION_NAME = re.compile(r'^[0-9]{1,6}$')
+pbx_sync_state = {'running': False, 'last_attempt': None, 'last_success': None, 'last_error': None, 'last_duration': None, 'summary': None}
+pbx_sync_lock = threading.Lock()
+_ua_cursor = {'offset': 0}
+
+
+def pbx_config():
+    def number(name, default, cast=int):
+        try:
+            return cast(os.getenv(name, default))
+        except ValueError:
+            return cast(default)
+
+    host = os.getenv('PBX_AMI_HOST', '').strip()
+    user = os.getenv('PBX_AMI_USER', '').strip()
+    secret = os.getenv('PBX_AMI_SECRET', '')
+    return {
+        'host': host, 'port': number('PBX_AMI_PORT', '5038'), 'user': user, 'secret': secret,
+        'interval': max(15, number('PBX_SYNC_INTERVAL_SECONDS', '45')),
+        'timeout': number('PBX_AMI_TIMEOUT', '5', float),
+        'ua_batch': max(0, number('PBX_UA_BATCH', '60')),
+        'enabled': bool(host and user and secret),
+    }
+
+
+def sync_pbx_once(client_factory=None, now=None):
+    """One read-only sync cycle PBX -> database; call it inside an app context.
+
+    Raises AMIError when the PBX cannot be read. Returns a summary dict.
+    Live fields (status, IP, RTT, last seen, User-Agent) are refreshed for every
+    numeric peer; peers that are new to us are created hidden from the public
+    (room by number pattern, otherwise 'pending'); trashed extensions are left
+    alone; a phone's model / MAC are filled from its User-Agent only when empty.
+    updated_at is deliberately NOT touched: it keeps meaning 'last human edit'."""
+    started = time.monotonic()
+    now = now or datetime.utcnow()
+    cfg = pbx_config()
+    if client_factory is None:
+        def client_factory():
+            return AMIClient(cfg['host'], cfg['port'], cfg['user'], cfg['secret'], cfg['timeout'])
+
+    entries = {e.extension: e for e in Extension.query.all()}  # includes trashed rows
+    agents = {}
+    with client_factory() as client:
+        peers = fetch_peers(client)
+        numeric = {name: peer for name, peer in peers.items() if PBX_EXTENSION_NAME.match(name)}
+        # Which User-Agents to (re)read this cycle: new, never-read or moved phones first,
+        # then a rotating slice so firmware changes show up within a few minutes.
+        online_names = sorted(name for name, peer in numeric.items() if peer.ip)
+        wanted = [n for n in online_names if n not in entries or not entries[n].user_agent or entries[n].last_ip != numeric[n].ip]
+        batch = cfg['ua_batch']
+        targets = wanted[:batch]
+        spare = batch - len(targets)
+        if spare > 0:
+            others = [n for n in online_names if n not in set(targets)]
+            if others:
+                start = _ua_cursor['offset'] % len(others)
+                rotation = (others[start:] + others[:start])[:spare]
+                targets += rotation
+                _ua_cursor['offset'] = start + len(rotation)
+        for name in targets:
+            agents[name] = fetch_user_agent(client, name)
+
+    created = in_trash = 0
+    counts = {'online': 0, 'offline': 0, 'unknown': 0}
+    for name, peer in numeric.items():
+        entry = entries.get(name)
+        if entry is None:
+            kind = suggest_kind(name)
+            entry = Extension(extension=name, title=('اتاق ' if kind == 'room' else 'داخلی ') + name,
+                              kind='room' if kind == 'room' else 'pending', is_active=True)
+            db.session.add(entry)
+            entries[name] = entry
+            created += 1
+        elif entry.is_deleted:
+            in_trash += 1
+            continue
+        entry.reg_status = peer.state
+        entry.rtt_ms = peer.rtt_ms if peer.state == 'online' else None
+        if peer.ip:
+            entry.last_ip = peer.ip
+        if peer.state == 'online':
+            entry.last_seen_at = now
+        entry.status_updated_at = now
+        user_agent = agents.get(name)
+        if user_agent:
+            entry.user_agent = user_agent[:200]
+            info = parse_user_agent(user_agent)
+            if not entry.phone_model and info['display_model']:
+                entry.phone_model = info['display_model'][:60]
+            if not entry.mac and info['mac']:
+                entry.mac = info['mac']
+        counts[peer.state] += 1
+
+    not_on_pbx = 0
+    for name, entry in entries.items():
+        if entry.is_deleted or name in numeric:
+            continue
+        not_on_pbx += 1
+        if entry.reg_status or entry.status_updated_at:  # no longer on the PBX: drop the stale live state
+            entry.reg_status = None
+            entry.rtt_ms = None
+            entry.status_updated_at = None
+    for entry in list(db.session.dirty):
+        if isinstance(entry, Extension) and entry.id is not None:
+            flag_modified(entry, 'updated_at')  # keep the old updated_at: onupdate must not fire for sync writes
+    if created:
+        log_activity('created', 'extension', f'همگام‌سازی PBX: {created} داخلی جدید', details='ساخته‌شده از روی ایزابل؛ مخفی از پرسنل تا تأیید مدیر')
+        bump_data_version()
+    db.session.commit()
+    return {'peers': len(peers), 'extensions': len(numeric), 'ignored': len(peers) - len(numeric), 'created': created,
+            'in_trash': in_trash, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2), **counts}
+
+
+def run_pbx_sync(app_obj, client_factory=None):
+    """Run one cycle with locking and state bookkeeping -> (ok, summary dict or error text)."""
+    if not pbx_sync_lock.acquire(blocking=False):
+        return False, 'یک همگام‌سازی دیگر در حال اجراست.'
+    try:
+        started = time.monotonic()
+        pbx_sync_state['running'] = True
+        pbx_sync_state['last_attempt'] = datetime.utcnow()
+        with app_obj.app_context():
+            try:
+                summary = sync_pbx_once(client_factory)
+            except (AMIError, OSError) as exc:
+                db.session.rollback()
+                message = str(exc)
+                if message != pbx_sync_state['last_error']:
+                    app_obj.logger.warning('PBX sync failed: %s', message)
+                pbx_sync_state['last_error'] = message
+                return False, message
+            except Exception:
+                db.session.rollback()
+                app_obj.logger.exception('PBX sync crashed')
+                pbx_sync_state['last_error'] = 'خطای داخلی در همگام‌سازی؛ جزئیات در لاگ سرور ثبت شد.'
+                return False, pbx_sync_state['last_error']
+        pbx_sync_state.update(last_success=datetime.utcnow(), last_error=None, summary=summary, last_duration=time.monotonic() - started)
+        return True, summary
+    finally:
+        pbx_sync_state['running'] = False
+        pbx_sync_lock.release()
+
+
+def start_pbx_sync_thread(app_obj):
+    """Background polling thread (daemon). Returns None when the PBX link is not configured."""
+    if not pbx_config()['enabled']:
+        return None
+    stop = threading.Event()
+
+    def loop():
+        while True:
+            run_pbx_sync(app_obj)
+            if stop.wait(pbx_config()['interval']):
+                break
+
+    thread = threading.Thread(target=loop, name='pbx-sync', daemon=True)
+    thread.start()
+    app_obj.extensions['pbx_sync_stop'] = stop
+    return thread
+
+
 def create_app():
     app = Flask(__name__)
     admin_prefix = get_or_create_admin_prefix()
@@ -720,6 +890,8 @@ def create_app():
     app.jinja_env.globals['phone_status'] = display_phone_status
     app.jinja_env.globals['phone_status_labels'] = PHONE_STATUS_LABELS
     app.jinja_env.globals['kind_labels'] = KIND_LABELS
+    app.jinja_env.globals['pbx_config'] = pbx_config
+    app.jinja_env.globals['pbx_state'] = pbx_sync_state
     app.jinja_env.globals['data_version'] = lambda: _data_version
     app.jinja_env.filters['local_dt'] = format_local_datetime
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
@@ -1575,6 +1747,61 @@ def create_app():
     def mac_import_cancel():
         clear_mac_temp()
         return redirect(url_for('admin'))
+
+    # ---- PBX page: sync status, new extensions to review, offline phones ---------------
+    @app.route(f'/{admin_prefix}/pbx')
+    @login_required
+    def pbx_status():
+        live = Extension.query.filter(Extension.is_deleted == False)  # noqa: E712
+        table = {kind: {'online': 0, 'offline': 0, 'unknown': 0, 'none': 0} for kind in EXTENSION_KINDS}
+        for kind, status, total in db.session.query(Extension.kind, Extension.reg_status, func.count()).filter(Extension.is_deleted == False).group_by(Extension.kind, Extension.reg_status):  # noqa: E712
+            if kind in table:
+                table[kind][status if status in ('online', 'offline', 'unknown') else 'none'] += total
+        has_synced = pbx_sync_state['last_success'] is not None
+        pending = live.filter_by(kind='pending').order_by(Extension.extension).limit(200).all()
+        offline = live.filter_by(reg_status='offline').order_by(Extension.kind, Extension.extension).limit(300).all()
+        not_on_pbx = live.filter(Extension.kind == 'staff', Extension.status_updated_at == None).order_by(Extension.extension).limit(200).all() if has_synced else []  # noqa: E711
+        mismatches = []
+        for e in live.filter(Extension.mac != None, Extension.user_agent != None).all():  # noqa: E711
+            ua_mac = parse_user_agent(e.user_agent)['mac']
+            if ua_mac and ua_mac != e.mac:
+                mismatches.append((e, ua_mac))
+        return render_template('pbx.html', cfg=pbx_config(), state=pbx_sync_state, table=table, pending=pending, offline=offline,
+                               not_on_pbx=not_on_pbx, has_synced=has_synced, mismatches=mismatches)
+
+    @app.route(f'/{admin_prefix}/pbx/sync', methods=['POST'])
+    @login_required
+    def pbx_sync_now():
+        if not pbx_config()['enabled']:
+            flash('اتصال به PBX تنظیم نشده است.', 'warning')
+            return redirect(url_for('pbx_status'))
+        ok, result = run_pbx_sync(app)
+        if ok:
+            flash(f"همگام‌سازی انجام شد: {result['online']} آنلاین، {result['offline']} آفلاین، {result['unknown']} نامشخص"
+                  + (f"، {result['created']} داخلی جدید" if result['created'] else '') + '.', 'success')
+        else:
+            flash(f'همگام‌سازی ناموفق بود: {result}', 'danger')
+        return redirect(url_for('pbx_status'))
+
+    @app.route(f'/{admin_prefix}/pbx/set-kind', methods=['POST'])
+    @login_required
+    def pbx_set_kind():
+        entry = db.session.get(Extension, request.form.get('id', type=int) or 0)
+        kind = request.form.get('kind', '')
+        if entry is None or entry.is_deleted or kind not in ('staff', 'room'):
+            flash('درخواست نامعتبر است.', 'danger')
+            return redirect(url_for('pbx_status'))
+        entry.kind = kind
+        log_activity('updated', 'extension', f'{entry.extension} - {entry.title}', details=f'نوع: {KIND_LABELS[kind]}')
+        bump_data_version()
+        db.session.commit()
+        flash(f'داخلی {entry.extension} به «{KIND_LABELS[kind]}» تبدیل شد.', 'success')
+        return redirect(url_for('pbx_status'))
+
+    # Background polling; PBX_SYNC_AUTOSTART=0 disables the thread (the page's button still works).
+    in_reloader_parent = os.getenv('FLASK_DEBUG', '0') == '1' and os.getenv('WERKZEUG_RUN_MAIN') != 'true'
+    if os.getenv('PBX_SYNC_AUTOSTART', '1') == '1' and not in_reloader_parent:
+        start_pbx_sync_thread(app)
 
     return app
 

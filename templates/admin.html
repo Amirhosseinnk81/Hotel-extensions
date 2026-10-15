@@ -35,6 +35,12 @@
   </div>
 
   <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">☎</span><h6>اتصال به PBX (ایزابل)</h6></div>
+    <p class="action-desc">{% if pbx_config().enabled %}وضعیت زندهٔ تلفن‌ها، داخلی‌های جدید برای تأیید و تلفن‌های آفلاین.{% else %}هنوز تنظیم نشده؛ راهنما در DEPLOYMENT.md.{% endif %}</p>
+    <a href="{{ url_for('pbx_status') }}" class="btn btn-outline-primary btn-sm">باز کردن صفحهٔ PBX</a>
+  </div>
+
+  <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⌗</span><h6>ایمپورت MAC تلفن‌ها</h6></div>
     <p class="action-desc">از فایل Excel یا CSV؛ ستون‌ها را خودتان انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. فایل ناقص هم مشکلی ندارد.</p>
     <a href="{{ url_for('mac_import') }}" class="btn btn-outline-primary btn-sm">شروع ایمپورت MAC</a>
