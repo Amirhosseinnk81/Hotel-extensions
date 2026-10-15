@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 
 
 
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
@@ -38,7 +38,7 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
-from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent
+from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent, shared_scraper
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -74,7 +74,9 @@ ROOM_FLOOR_MAX = int(os.getenv('ROOM_FLOOR_MAX', '23'))
 ROOM_NUMBER_MAX = int(os.getenv('ROOM_NUMBER_MAX', '27'))
 # Phone status older than this many minutes is shown as "unknown".
 PBX_STATUS_STALE_MINUTES = int(os.getenv('PBX_STATUS_STALE_MINUTES', '10'))
+PBX_SLOW_MS = int(os.getenv('PBX_SLOW_MS', '150'))  # an online phone at or above this latency gets the yellow badge
 PHONE_STATUS_LABELS = {'online': 'تلفن آنلاین', 'offline': 'تلفن آفلاین', 'unknown': 'وضعیت تلفن نامشخص'}
+PHONE_SLOW_LABEL = 'تلفن آنلاین (تأخیر بالا)'
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -224,6 +226,19 @@ def display_phone_status(entry):
     if datetime.utcnow() - entry.status_updated_at > timedelta(minutes=PBX_STATUS_STALE_MINUTES):
         return 'unknown'
     return entry.reg_status if entry.reg_status in ('online', 'offline') else 'unknown'
+
+
+def phone_is_slow(entry):
+    """True for an online phone whose last measured latency is at or above PBX_SLOW_MS."""
+    return display_phone_status(entry) == 'online' and entry.rtt_ms is not None and entry.rtt_ms >= PBX_SLOW_MS
+
+
+def phone_label(entry):
+    """Badge text for the phone state, or '' when there is no PBX data."""
+    status = display_phone_status(entry)
+    if not status:
+        return ''
+    return PHONE_SLOW_LABEL if phone_is_slow(entry) else PHONE_STATUS_LABELS[status]
 
 
 def parse_row_extras(row):
@@ -688,9 +703,16 @@ def apply_mac_plan(plan, overwrite=False):
     return counts
 
 
-# ---- PBX sync (Issabel / Asterisk over AMI, read-only) ---------------------------------
-# Off unless PBX_AMI_HOST, PBX_AMI_USER and PBX_AMI_SECRET are set. The secret only ever
-# lives in the environment. State is per process, so run a single worker (see DEPLOYMENT.md).
+# ---- PBX sync (Issabel / Asterisk, read-only) --------------------------------------------
+# Two sources, same database columns:
+#   ami - Asterisk Manager Interface; needs PBX_AMI_HOST, PBX_AMI_USER and PBX_AMI_SECRET
+#   web - the Issabel web panel (form login + Operator Panel status stream); needs PBX_WEB_HOST,
+#         PBX_WEB_USER and PBX_WEB_PASS. For servers where AMI cannot be set up.
+# PBX_SOURCE=ami|web picks one; the default 'auto' uses AMI when it is configured, else the web
+# panel. Off when neither is configured. Secrets only ever live in the environment. State is per
+# process, so run a single worker (see DEPLOYMENT.md).
+# Database mapping of the status fields: reg_status = online/offline/unknown, rtt_ms = latency in
+# ms, status_updated_at = time of the last successful query.
 PBX_EXTENSION_NAME = re.compile(r'^[0-9]{1,6}$')
 pbx_sync_state = {'running': False, 'last_attempt': None, 'last_success': None, 'last_error': None, 'last_duration': None, 'summary': None}
 pbx_sync_lock = threading.Lock()
@@ -704,22 +726,48 @@ def pbx_config():
         except ValueError:
             return cast(default)
 
+    def flag(name, default=False):
+        raw = os.getenv(name, '').strip().lower()
+        return default if not raw else raw in ('1', 'true', 'yes', 'on')
+
     host = os.getenv('PBX_AMI_HOST', '').strip()
     user = os.getenv('PBX_AMI_USER', '').strip()
     secret = os.getenv('PBX_AMI_SECRET', '')
+    web_host = os.getenv('PBX_WEB_HOST', '').strip()
+    web_user = os.getenv('PBX_WEB_USER', '').strip()
+    web_pass = os.getenv('PBX_WEB_PASS', '')
+    ami_ready = bool(host and user and secret)
+    web_ready = bool(web_host and web_user and web_pass)
+    wanted = os.getenv('PBX_SOURCE', 'auto').strip().lower()
+    if wanted == 'web':
+        source = 'web' if web_ready else None
+    elif wanted == 'ami':
+        source = 'ami' if ami_ready else None
+    else:
+        source = 'ami' if ami_ready else 'web' if web_ready else None
     return {
         'host': host, 'port': number('PBX_AMI_PORT', '5038'), 'user': user, 'secret': secret,
-        'interval': max(15, number('PBX_SYNC_INTERVAL_SECONDS', '45')),
+        'web_host': web_host, 'web_user': web_user, 'web_pass': web_pass,
+        'web_verify_ssl': flag('PBX_VERIFY_SSL', False),  # Issabel's own certificate is self-signed
+        'web_timeout': number('PBX_WEB_TIMEOUT', '10', float),
+        'web_login_path': os.getenv('PBX_WEB_LOGIN_PATH', '').strip() or '/index.php',
+        'web_peers_path': os.getenv('PBX_WEB_PEERS_PATH', '').strip() or '/index.php?menu=control_panel',
+        'source': source,
+        'interval': max(15, number('PBX_SYNC_INTERVAL', str(number('PBX_SYNC_INTERVAL_SECONDS', '30')))),
         'timeout': number('PBX_AMI_TIMEOUT', '5', float),
         'ua_batch': max(0, number('PBX_UA_BATCH', '60')),
-        'enabled': bool(host and user and secret),
+        'enabled': source is not None,
     }
 
 
-def sync_pbx_once(client_factory=None, now=None):
+def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     """One read-only sync cycle PBX -> database; call it inside an app context.
 
-    Raises AMIError when the PBX cannot be read. Returns a summary dict.
+    The peers come from AMI (client_factory) or, when AMI is not configured / PBX_SOURCE=web
+    (or web_scraper is given), from the Issabel web panel; the web page has no User-Agent, so
+    that source leaves phone model / MAC alone.
+
+    Raises AMIError (PBXWebError for the web source) when the PBX cannot be read. Returns a summary dict.
     Live fields (status, IP, RTT, last seen, User-Agent) are refreshed for every
     numeric peer; peers that are new to us are created hidden from the public
     (room by number pattern, otherwise 'pending'); trashed extensions are left
@@ -728,31 +776,38 @@ def sync_pbx_once(client_factory=None, now=None):
     started = time.monotonic()
     now = now or datetime.utcnow()
     cfg = pbx_config()
-    if client_factory is None:
+    use_web = client_factory is None and (web_scraper is not None or cfg['source'] == 'web')
+    if client_factory is None and not use_web:
         def client_factory():
             return AMIClient(cfg['host'], cfg['port'], cfg['user'], cfg['secret'], cfg['timeout'])
 
     entries = {e.extension: e for e in Extension.query.all()}  # includes trashed rows
     agents = {}
-    with client_factory() as client:
-        peers = fetch_peers(client)
+    if use_web:
+        scraper = web_scraper or shared_scraper(cfg['web_host'], cfg['web_user'], cfg['web_pass'], cfg['web_verify_ssl'],
+                                                cfg['web_timeout'], cfg['web_login_path'], cfg['web_peers_path'])
+        peers = scraper.fetch_peer_states()
         numeric = {name: peer for name, peer in peers.items() if PBX_EXTENSION_NAME.match(name)}
-        # Which User-Agents to (re)read this cycle: new, never-read or moved phones first,
-        # then a rotating slice so firmware changes show up within a few minutes.
-        online_names = sorted(name for name, peer in numeric.items() if peer.ip)
-        wanted = [n for n in online_names if n not in entries or not entries[n].user_agent or entries[n].last_ip != numeric[n].ip]
-        batch = cfg['ua_batch']
-        targets = wanted[:batch]
-        spare = batch - len(targets)
-        if spare > 0:
-            others = [n for n in online_names if n not in set(targets)]
-            if others:
-                start = _ua_cursor['offset'] % len(others)
-                rotation = (others[start:] + others[:start])[:spare]
-                targets += rotation
-                _ua_cursor['offset'] = start + len(rotation)
-        for name in targets:
-            agents[name] = fetch_user_agent(client, name)
+    else:
+        with client_factory() as client:
+            peers = fetch_peers(client)
+            numeric = {name: peer for name, peer in peers.items() if PBX_EXTENSION_NAME.match(name)}
+            # Which User-Agents to (re)read this cycle: new, never-read or moved phones first,
+            # then a rotating slice so firmware changes show up within a few minutes.
+            online_names = sorted(name for name, peer in numeric.items() if peer.ip)
+            wanted = [n for n in online_names if n not in entries or not entries[n].user_agent or entries[n].last_ip != numeric[n].ip]
+            batch = cfg['ua_batch']
+            targets = wanted[:batch]
+            spare = batch - len(targets)
+            if spare > 0:
+                others = [n for n in online_names if n not in set(targets)]
+                if others:
+                    start = _ua_cursor['offset'] % len(others)
+                    rotation = (others[start:] + others[:start])[:spare]
+                    targets += rotation
+                    _ua_cursor['offset'] = start + len(rotation)
+            for name in targets:
+                agents[name] = fetch_user_agent(client, name)
 
     created = in_trash = 0
     counts = {'online': 0, 'offline': 0, 'unknown': 0}
@@ -828,6 +883,8 @@ def run_pbx_sync(app_obj, client_factory=None):
                 app_obj.logger.exception('PBX sync crashed')
                 pbx_sync_state['last_error'] = 'خطای داخلی در همگام‌سازی؛ جزئیات در لاگ سرور ثبت شد.'
                 return False, pbx_sync_state['last_error']
+        if pbx_sync_state['last_error']:
+            app_obj.logger.info('PBX sync recovered after: %s', pbx_sync_state['last_error'])
         pbx_sync_state.update(last_success=datetime.utcnow(), last_error=None, summary=summary, last_duration=time.monotonic() - started)
         return True, summary
     finally:
@@ -889,6 +946,8 @@ def create_app():
     app.jinja_env.globals['can_see_contact'] = can_see_contact
     app.jinja_env.globals['phone_status'] = display_phone_status
     app.jinja_env.globals['phone_status_labels'] = PHONE_STATUS_LABELS
+    app.jinja_env.globals['phone_slow'] = phone_is_slow
+    app.jinja_env.globals['phone_label'] = phone_label
     app.jinja_env.globals['kind_labels'] = KIND_LABELS
     app.jinja_env.globals['pbx_config'] = pbx_config
     app.jinja_env.globals['pbx_state'] = pbx_sync_state
@@ -1797,6 +1856,53 @@ def create_app():
         db.session.commit()
         flash(f'داخلی {entry.extension} به «{KIND_LABELS[kind]}» تبدیل شد.', 'success')
         return redirect(url_for('pbx_status'))
+
+    # ---- JSON API: live phone state for the badges (polled by static/app.js) -------------
+    def iso_utc(moment):
+        return moment.isoformat() + 'Z' if moment else None
+
+    def no_store(response):
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.route('/api/extensions/status')
+    def api_extensions_status():
+        """Phone state per extension. The public sees online / offline / unknown for the
+        public directory (staff) only; a signed-in admin also gets rooms, latency, IP and sync info."""
+        is_admin = current_user.is_authenticated
+        query = Extension.query.filter(Extension.is_deleted == False, Extension.reg_status != None)  # noqa: E711,E712
+        if not is_admin:
+            query = query.filter(Extension.kind == 'staff')
+        statuses = {}
+        for entry in query.all():
+            status = display_phone_status(entry)
+            if not status:
+                continue
+            item = {'status': status, 'label': phone_label(entry), 'slow': phone_is_slow(entry)}
+            if is_admin:
+                item.update(kind=entry.kind, latency_ms=entry.rtt_ms, ip=entry.last_ip or None, last_sync=iso_utc(entry.status_updated_at))
+            statuses[entry.extension] = item
+        cfg = pbx_config()
+        payload = {'ok': True, 'enabled': cfg['enabled'], 'interval': cfg['interval'], 'last_sync': iso_utc(pbx_sync_state['last_success']),
+                   'generated_at': iso_utc(datetime.utcnow()), 'statuses': statuses}
+        if is_admin:
+            payload['sync'] = {'source': cfg['source'], 'running': pbx_sync_state['running'], 'last_attempt': iso_utc(pbx_sync_state['last_attempt']),
+                               'last_error': pbx_sync_state['last_error']}
+        return no_store(jsonify(payload))
+
+    @app.route('/api/pbx/sync-now', methods=['POST'])
+    def api_pbx_sync_now():
+        """Admin only: run one sync cycle right now and return its summary (CSRF token required in X-CSRFToken)."""
+        if not current_user.is_authenticated:
+            return no_store(jsonify(ok=False, error='unauthorized')), 401
+        if not getattr(current_user, 'is_admin', False):
+            return no_store(jsonify(ok=False, error='forbidden')), 403
+        if not pbx_config()['enabled']:
+            return no_store(jsonify(ok=False, error='اتصال به PBX تنظیم نشده است.')), 409
+        ok, result = run_pbx_sync(app)
+        if ok:
+            return no_store(jsonify(ok=True, summary=result, last_sync=iso_utc(pbx_sync_state['last_success'])))
+        return no_store(jsonify(ok=False, error=str(result))), (409 if pbx_sync_lock.locked() else 502)
 
     # Background polling; PBX_SYNC_AUTOSTART=0 disables the thread (the page's button still works).
     in_reloader_parent = os.getenv('FLASK_DEBUG', '0') == '1' and os.getenv('WERKZEUG_RUN_MAIN') != 'true'

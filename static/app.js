@@ -150,6 +150,73 @@
     }, 20000);
   }
 
+  /* ---------------- Live phone-status badges (polls /api/extensions/status) ---------------- */
+  function initPhoneStatusPolling() {
+    var url = document.body.dataset.statusUrl;
+    if (!url) return;
+    var cards = document.querySelectorAll('.extension-card');
+    var rows = document.querySelectorAll('tr[data-ext]');
+    if (!cards.length && !rows.length) return;
+    var interval = Math.max(15, parseInt(document.body.dataset.statusInterval, 10) || 30) * 1000;
+    var STATES = ['online', 'offline', 'unknown'];
+
+    function paint(pill, info) {
+      var state = STATES.indexOf(info.status) !== -1 ? info.status : 'unknown';
+      pill.className = 'phone-pill ' + state + (info.slow ? ' slow' : '');
+      pill.textContent = info.label || '';
+    }
+
+    function ensurePill(parent) {
+      var pill = parent.querySelector('[data-phone-pill]');
+      if (!pill) {
+        pill = document.createElement('span');
+        pill.setAttribute('data-phone-pill', '');
+        parent.textContent = '';
+        parent.appendChild(pill);
+      }
+      return pill;
+    }
+
+    function apply(statuses) {
+      cards.forEach(function (card) {
+        var info = statuses[card.dataset.ext];
+        var pill = card.querySelector('[data-phone-pill]');
+        if (!info) {
+          if (pill) pill.remove();
+          card.dataset.phonestatus = '';
+          return;
+        }
+        if (!pill) {
+          var col = card.querySelector('.card-status-col');
+          if (!col) return;
+          pill = document.createElement('span');
+          pill.setAttribute('data-phone-pill', '');
+          col.appendChild(pill);
+        }
+        paint(pill, info);
+        card.dataset.phonestatus = info.label || '';
+      });
+      rows.forEach(function (row) {
+        var cell = row.querySelector('[data-phone-cell]');
+        if (!cell) return;  // the table has no phone column until the page is reloaded after the first sync
+        var info = statuses[row.dataset.ext];
+        if (!info) { cell.textContent = '—'; return; }
+        paint(ensurePill(cell), info);
+      });
+    }
+
+    function poll() {
+      if (document.hidden) return;
+      fetch(url, { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) { if (data && data.statuses) apply(data.statuses); })
+        .catch(function () {});  // keep the badges that are showing; try again next round
+    }
+
+    setInterval(poll, interval);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+  }
+
   /* ---------------- Extension detail modal ---------------- */
   function initDetailModal() {
     var modalEl = document.getElementById('extensionDetailModal');
@@ -238,6 +305,7 @@
     initCopyButtons();
     initPrintButtons();
     initUpdatePolling();
+    initPhoneStatusPolling();
     initDetailModal();
     initBulkSelect();
     initViewToggle();

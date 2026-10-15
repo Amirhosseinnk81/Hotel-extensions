@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
-<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}">
+<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}>
 <div id="updateToast" class="update-toast no-print" hidden>
   <span>یک به‌روزرسانی جدید موجود است.</span>
   <button type="button" id="updateToastBtn">مشاهده تغییرات</button>

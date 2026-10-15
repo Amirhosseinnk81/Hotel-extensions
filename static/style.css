@@ -231,6 +231,7 @@ body{
 .phone-pill{font-size:.62rem;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;background:#e7f8ee;color:#1f8a4c}
 .phone-pill.offline{background:#fdeceb;color:#a5322a}
 .phone-pill.unknown{background:#f1f2f5;color:#8791a0}
+.phone-pill.slow{background:#fff4d6;color:#8a6100}
 .hours-line{display:block;color:var(--muted);font-size:.75rem;margin-top:2px}
 .location-line{color:var(--muted);font-size:.78rem}
 .notes{font-size:.8rem;color:#71809a;margin:8px 0 0}

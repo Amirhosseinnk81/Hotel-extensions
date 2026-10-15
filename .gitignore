@@ -6,3 +6,4 @@ hotel_extensions.db
 .admin_prefix
 tmp_imports/
 logs/
+.env

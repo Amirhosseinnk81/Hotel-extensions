@@ -1,0 +1,990 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Issabel</title>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:400,700,400italic">
+    <link rel="stylesheet" href="themes/tenant/css/bootstrap.css">
+    <link rel="stylesheet" href="themes/tenant/css/neon-core.css">
+    <link rel="stylesheet" href="themes/tenant/css/neon-theme.css">
+    <link rel="stylesheet" href="themes/tenant/css/neon-forms.css">
+    <link rel="stylesheet" href="themes/tenant/css/font-awesome-animation.min.css">
+    <link rel="stylesheet" href="themes/tenant/css/custom.css">
+
+    <link rel="stylesheet" href="themes/tenant/styles.css" />
+    <link rel="stylesheet" href="themes/tenant/widgets.css" />
+    <link rel="stylesheet" href="themes/tenant/help.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="themes/tenant/header.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="themes/tenant/content.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="themes/tenant/applet.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="libs/js/sticky_note/sticky_note.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="themes/tenant/table.css" />
+    <link rel="stylesheet" media="screen" type="text/css" href="themes/tenant/rightbar.css" />
+    <link rel="stylesheet" href="themes/tenant/css/purple.css">
+
+    <script type='text/javascript' src='libs/js/jquery/jquery-1.11.2.min.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-edwidgets.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-migrate-1.2.1.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-ui-1.11.4.min.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-ui-timepicker-addon.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-upl-blockUI.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-upl-colResizable-1.5.min.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-upl-colorpicker.js'></script>
+<script type='text/javascript' src='libs/js/jquery/jquery-upl-easing.1.3.js'></script>
+<link rel='stylesheet' href='libs/js/jquery/widgetcss/colorpicker.css' />
+<link rel='stylesheet' href='libs/js/jquery/widgetcss/edwidgets.css' />
+<link rel='stylesheet' href='libs/js/jquery/widgetcss/jquery-ui-timepicker-addon.css' />
+<link rel='stylesheet' href='libs/js/jquery/css/smoothness/jquery-ui.min.css' />
+<link rel='stylesheet' href='libs/js/jquery/css/smoothness/theme.css' />
+<link rel='stylesheet' href='libs/font-icons/entypo/css/entypo.css' />
+<link rel='stylesheet' href='libs/font-icons/font-awesome/css/font-awesome.min.css' />
+    <script src="libs/js/base.js"></script>
+    <script src="libs/js/sticky_note/sticky_note.js"></script>
+    <script src="libs/js/iframe.js"></script>
+
+    
+    <script type='text/javascript' src='modules/control_panel/themes/default/js/handlebars-1.3.0.js'></script>
+<script type='text/javascript' src='modules/control_panel/themes/default/js/ember-1.5.1.min.js'></script>
+<script type='text/javascript' src='modules/control_panel/themes/default/js/javascript.js'></script>
+<script type='text/javascript' src='modules/control_panel/themes/default/js/jquery.faq.js'></script>
+<link rel='stylesheet' href='modules/control_panel/themes/default/css/faq.css' />
+<link rel='stylesheet' href='modules/control_panel/themes/default/css/style.css' />
+    </head>
+    <body leftmargin="0" topmargin="0" marginwidth="0" marginheight="0" class="mainBody page-body" >
+    <div class="page-container">
+
+        <script type='text/javascript'>
+var themeName='elastixneo'; //nombre del tema
+$(document).ready(function(){
+    LblRegister = 'Register';
+    $("#togglebookmark").click(function() {
+        var imgBookmark = $("#togglebookmark").attr('src');
+        if(/bookmarkon.png/.test(imgBookmark)) {
+            $("#togglebookmark").attr('src',"web/themes/"+themeName+"/images/bookmark.png");
+        } else {
+            $("#togglebookmark").attr('src',"web/themes/"+themeName+"/images/bookmarkon.png");
+        }
+    });
+
+
+
+    $("#export_button").hover(
+      function () {
+          $(this).addClass("exportBorder");
+      },
+      function () {
+          $(this).removeClass("exportBorder");
+          $(this).attr("aria-expanded","false");
+          $(this).removeClass("exportBackground");
+          $(".letranodec").css("color","#444444");
+          $("#subMenuExport").addClass("neo-display-none");
+      }
+    );
+    $("#neo-table-button-download-right").click(
+      function () {
+          if($(this).attr("aria-expanded") == "false"){
+          var exportPosition = $('#export_button').position();
+          var top = exportPosition.top + 41;
+          var left = exportPosition.left - 3;
+          $("#subMenuExport").css('top',top+"px");
+          $("#subMenuExport").css('left',left+"px");
+          $(this).attr("aria-expanded","true");
+          $(this).addClass("exportBackground");
+          $(".letranodec").css("color","#FFFFFF");
+          $("#subMenuExport").removeClass("neo-display-none");
+          }
+          else{
+          $(".letranodec").css("color","#444444");
+          $("#subMenuExport").addClass("neo-display-none");
+          $(this).removeClass("exportBackground");
+          $(this).attr("aria-expanded","false");
+          }
+      }
+    );
+
+    $("#subMenuExport").hover(
+      function () {
+        $(this).removeClass("neo-display-none");
+        $(".letranodec").css("color","#FFFFFF");
+        $("#export_button").attr("aria-expanded","true");
+        $("#export_button").addClass("exportBackground");
+      },
+      function () {
+        $(this).addClass("neo-display-none");
+        $(".letranodec").css("color","#444444");
+        $("#export_button").removeClass("exportBackground");
+        $("#export_button").attr("aria-expanded","false");
+      }
+    );
+
+   $('#header_open_sidebar, a.chat-close').click(function (e) {
+      $('div.page-container').toggleClass('chat-visible');
+      toggle_sidebar_menu(true);
+      e.stopPropagation();
+   });
+
+});
+
+function removeNeoDisplayOnMouseOut(ref){
+    $(ref).find('div').addClass('neo-display-none');
+}
+
+function removeNeoDisplayOnMouseOver(ref){
+    $(ref).find('div').removeClass('neo-display-none');
+}
+</script>
+
+
+<input type="hidden" id="lblRegisterCm"   value="Register" />
+<input type="hidden" id="lblRegisteredCm" value="Registered" />
+<input type="hidden" id="userMenuColor" value="#454545" />
+<input type="hidden" id="toolTip_addBookmark" value="Add Bookmark" />
+<input type="hidden" id="toolTip_removeBookmark" value="Remove Bookmark" />
+<input type="hidden" id="toolTip_addingBookmark" value="Adding Bookmark" />
+<input type="hidden" id="toolTip_removingBookmark" value="Removing Bookmark" />
+<input type="hidden" id="toolTip_hideTab" value="Hide left panel" />
+<input type="hidden" id="toolTip_showTab" value="Load left panel" />
+<input type="hidden" id="toolTip_hidingTab" value="Hiding left panel" />
+<input type="hidden" id="toolTip_showingTab" value="Loading left panel" />
+<input type="hidden" id="amount_char_label" value="characters left" />
+<input type="hidden" id="save_note_label" value="Saving Note" />
+<input type="hidden" id="get_note_label" value="Loading Note" />
+<input type="hidden" id="issabel_theme_name" value="tenant" />
+<input type="hidden" id="lbl_no_description" value="Click here to leave a note." />
+
+<!-- inicio del menú tipo acordeon-->
+<div class="sidebar-menu">
+    <header class="logo-env">
+        <!-- logo -->
+        <div class="logo">
+            <a href="index.php">
+                <img src="themes/tenant/images/issabel_logo_mini2.png" width="120" alt="" />
+            </a>
+        </div>
+        <!-- logo collapse icon -->
+        <div class="sidebar-collapse">
+            <a href="#" class="sidebar-collapse-icon with-animation"><!-- add class "with-animation" if you want sidebar to have animation during expanding/collapsing transition -->
+                <i class="entypo-menu"></i>
+            </a>
+        </div>
+        <!-- open/close menu icon (do not remove if you want to enable menu on mobile devices) -->
+        <div class="sidebar-mobile-menu visible-xs">
+            <a href="#" class="with-animation"><!-- add class "with-animation" to support animation -->
+                <i class="entypo-menu"></i>
+            </a>
+        </div>
+    </header>
+
+    <ul id="main-menu" class="">
+        <!-- add class "multiple-expanded" to allow multiple submenus to open -->
+        <!-- class "auto-inherit-active-class" will automatically add "active" class for parent elements who are marked already with class "active" -->
+        <!-- Search Bar -->
+        <li id="search">
+            <form method="get" action="">
+                <input type="text" id="search_module_issabel" name="search_module_issabel" class="search-input" placeholder="Search modules"/>
+                <button type="submit">
+                    <i class="entypo-search"></i>
+                </button>
+            </form>
+        </li>
+        <!--recorremos el arreglo del menu nivel primario-->
+                                    <li>
+                                <a href="index.php?menu=system">
+                         <i class="fa fa-laptop"></i>
+			<!--<span>system</span>-->
+			<span>System</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=sysdash">
+                                    <span>Dashboard</span>
+                                </a>
+                                                                                        <ul>
+                                    <!--recorremos el arreglo del menu de tercer nivel-->
+                                                                            <li>
+                                                                                            <a href="index.php?menu=dashboard">
+                                                    <span>Dashboard</span>
+                                                </a>
+                                                                                    </li>
+                                                                            <li>
+                                                                                            <a href="index.php?menu=applet_admin">
+                                                    <span>Dashboard Applet Admin</span>
+                                                </a>
+                                                                                    </li>
+                                                                    </ul>
+                                                    </li>
+                                            </ul>
+                </li>
+                                    <li>
+                                <a href="index.php?menu=agenda">
+                         <i class="fa fa-book"></i>
+			<!--<span>agenda</span>-->
+			<span>Agenda</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=calendar">
+                                    <span>Calendar</span>
+                                </a>
+                                                                                </li>
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=address_book">
+                                    <span>Address Book</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+                                    <li>
+                                <a href="index.php?menu=email_admin">
+                         <i class="fa fa-envelope"></i>
+			<!--<span>email_admin</span>-->
+			<span>Email</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=webmail">
+                                    <span>Webmail</span>
+                                </a>
+                                                                                </li>
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=vacations">
+                                    <span>Vacations</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+                                    <li class="active opened active">
+                                <a href="index.php?menu=pbxconfig">
+                         <i class="fa fa-phone"></i>
+			<!--<span>pbxconfig</span>-->
+			<span>PBX</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li class="active opened active">
+                                                                                        <a href="index.php?menu=control_panel">
+                                    <span>Operator Panel</span>
+                                </a>
+                                                                                </li>
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=voicemail">
+                                    <span>Voicemails</span>
+                                </a>
+                                                                                </li>
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=monitoring">
+                                    <span>Calls Recordings</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+                                    <li>
+                                <a href="index.php?menu=reports">
+                         <i class="fa fa-bar-chart-o"></i>
+			<!--<span>reports</span>-->
+			<span>Reports</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=cdrreport">
+                                    <span>CDR Report</span>
+                                </a>
+                                                                                </li>
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=channelusage">
+                                    <span>Channels Usage</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+                                    <li>
+                                <a href="index.php?menu=extras">
+                         <i class="fa fa-plus"></i>
+			<!--<span>extras</span>-->
+			<span>Extras</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=meet">
+                                    <span>Issabel Meet</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+                                    <li>
+                                <a href="index.php?menu=my_extension">
+                         <i class="fa fa-fax"></i>
+			<!--<span>my_extension</span>-->
+			<span>My Extension</span>
+                    </a>
+                    <ul>
+                        <!--recorremos el arreglo del menu nivel secundario-->
+                                                                                    <li>
+                                                                                        <a href="index.php?menu=myex_config">
+                                    <span>Settings</span>
+                                </a>
+                                                                                </li>
+                                            </ul>
+                </li>
+        
+        <li>
+    </li>
+
+<li>
+    <a href="#">
+         <i class="fa fa-history"></i>
+        <span>History</span>
+    </a>
+    <ul>
+                    <li>
+                <a href="index.php?menu=control_panel">
+                    <span>Operator Panel</span>
+                </a>
+            </li>
+                    <li>
+                <a href="index.php?menu=dashboard">
+                    <span>Dashboard</span>
+                </a>
+            </li>
+                    <li>
+                <a href="index.php?menu=myex_config">
+                    <span>Settings</span>
+                </a>
+            </li>
+                    <li>
+                <a href="index.php?menu=applet_admin">
+                    <span>Dashboard Applet Admin</span>
+                </a>
+            </li>
+                    <li>
+                <a href="index.php?menu=cdrreport">
+                    <span>CDR Report</span>
+                </a>
+            </li>
+            </ul>
+</li>
+
+    </ul>
+</div>
+<!-- fin del menú tipo acordeon-->
+
+<!-- inicio del head principal-->
+<div class="main-content">
+<div style="height:83px;background-color:#373e4a;padding:15px;">
+    <!-- Profile Info and Notifications -->
+    <span style='float:right; text-align:right; padding:0px 5px 0px 0px; width:175px;' class="col-md-6 col-sm-8 clearfix">
+        <ul style='float:right;' class="user-info pull-none-xsm">
+            <!-- Profile Info -->
+            <li class="profile-info dropdown pull-right"><!-- add class "pull-right" if you want to place this from right -->
+                <a href="#" class="dropdown-toggle" data-toggle="dropdown">
+                    <img  style="border:0px" src="index.php?menu=address_book&type=internal&action=getImage&idPhoto=&rawmode=yes&thumbnail=yes" alt="" class="img-circle" width="44" />
+                    IT
+                </a>
+                <!-- Reverse Caret -->
+                <i style='font-size:15px;font-weight:bold;' class="fa fa-angle-down"></i>
+                <!-- Profile sub-links -->
+                <ul class="dropdown-menu">
+
+                    <!-- Reverse Caret -->
+                    <li class="caret"></li>
+
+                    <!-- Profile sub-links -->
+                    <li class="dropdown">
+                        <a href="#" class="setadminpassword">
+                            <i class="fa fa-user"></i>
+                            Change Issabel Password
+                        </a>
+                    </li>
+                    <li class="dropdown">
+                        <a  href="index.php?logout=yes" >
+                            <i class="fa fa-sign-out"></i>
+                            Logout
+                        </a>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+    </span>
+
+    <!-- Raw Links -->
+    <span style='float:right; width:400px;'>
+        <ul style="padding-top:12px;" class="list-inline links-list pull-right neo-topbar-notification">
+
+        <li id="header_registration_info" class="profile-info dropdown">
+            <a data-toggle="dropdown" class="" href="#">
+                <i class="fa fa-info-circle"></i>
+            </a>
+            <ul class="dropdown-menu">
+
+                <!-- Reverse Caret -->
+                <li class="caret"></li>
+
+                <!-- Profile sub-links -->
+                <li><a href="#" class="register_link">Register</a></li>
+                <li><a href="#" id="viewDetailsRPMs"><i class="fa fa-cube"></i>Version</a></li>
+                <li><a href="http://www.issabel.org" target="_blank"><i class="fa fa-external-link"></i>Issabel Website</a></li>
+                <li><a href="#" id="dialogaboutissabel"><i class="fa fa-info-circle"></i>About Issabel</a></li>
+            </ul>
+        </li>
+
+        <!--li id="header_notification_bar" class="dropdown">
+            <a  class="" href="index.php?menu=addons">
+                <i class="fa fa-cubes"></i>
+            </a>
+        </li-->
+
+        <!-- notification dropdown start-->
+        <!--li id="header_notification_bar" class="dropdown">
+            <a data-toggle="dropdown" class="" href="#">
+                <i class="fa fa-heartbeat"></i>
+            </a>
+        </li-->
+        <!-- notification dropdown end -->
+        <li id="header_notification_bar" class="profile-info dropdown pull-right notifications" style="float: none !important;">
+            <a data-toggle="dropdown" class="" href="#">
+                <i id='notibell' class="fa fa-bell-o faa-shake animated"></i>
+            </a>
+            <ul class="dropdown-menu">
+
+                <!-- Reverse Caret -->
+                <li class="caret"></li>
+
+                        <li><p>System</p></li>
+                <li>
+                    <ul>
+                                                    <li id='notiitem1' class="notification-danger">
+                                <a href="#" onclick='readNoti("1")'><i class="fa fa-ban"></i>GeoIP problem. Unable to download DB-IP database.</a>
+                            </li>
+                                            </ul>
+                </li>
+                        <li><p>User</p></li>
+                <li>
+                    <ul>
+                                                    <li><p>No notifications</p></li>
+                                            </ul>
+                </li>
+            </ul>
+        </li>
+        </ul>
+    </span>
+
+
+</div>
+
+				<!-- Breadcrumb 3 -->
+<ol class="breadcrumb bc-2">
+
+                         <li>
+                <a href="/"> <i class="entypo-home"></i></a>
+                <a href="#"> PBX</a>
+             </li>
+                               <li class="active"><strong>Operator Panel</strong></li>
+              <li id="tenant-help">
+    <a class="" href="#" onclick="popUp('help/?id_nodo=control_panel&name_nodo=Operator Panel','1000','460')"> 
+	<!--a href="http://help.issabel.org" target="_bank"-->
+        <i class="fa fa-support"></i>
+    </a>
+   </li>
+   <li id="tenant-sticky" class="dropdown">
+   	<a id="togglestickynote1" href="#">
+   		<i class="fa fa-sticky-note"></i>
+   	</a>
+   </li>
+</ol>
+
+<!-- contenido del modulo-->
+<div id="neo-contentbox">
+    <div id="neo-contentbox-maincolumn">
+        <input type="hidden" id="issabel_framework_module_id" value="control_panel" />
+        <input type="hidden" id="issabel_framework_webCommon" value="libs/" />
+        <div class="neo-module-content">
+
+
+
+
+ <!-- Viene del tpl menu.tlp-->
+                                        <div id="controlPanelApplication">
+
+<script type="text/x-handlebars" data-template-name="desktop">
+<div style="float: left">
+<div class="statusbar">
+<!-- TODO: i18n -->
+
+{{#if connected}}
+<span style="color: green; font-weight: bold;">Connected</span>
+{{else}}
+<span style="color: red; font-weight: bold;">Connecting...</span>
+{{/if}}
+
+</div>
+{{#view App.BaseSortableView }}
+
+
+{{#view App.PBXPanelView controllerBinding="extensions" }}
+	Extensions
+	{{#if finishedloading}}
+	{{#view App.SortablePanelView }}
+		{{#each }}
+		{{view App.ExtensionView }}
+		{{else}}
+		<br/>
+		{{/each}}
+	{{/view}}
+	{{else}}
+	<img class="icon" src="modules/control_panel/images/loading.gif"/>
+	{{/if}}
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="dahdi" }}
+    DAHDI Trunks
+    {{#if finishedloading}}
+	<div>
+		{{#each }}
+		{{view App.DAHDISpanView }}
+		{{else}}
+		<br/>
+		{{/each}}
+    </div>
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="iptrunks" }}
+	SIP/IAX Trunks
+	{{#if finishedloading}}
+	<div>
+		{{#each }}
+		{{view App.IPTrunkView }}
+		{{else}}
+		<br/>
+		{{/each}}
+	</div>
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+{{/view}}
+
+
+{{/view}}</div>
+
+
+{{#view App.FAQView }}
+{{#view App.BaseSortableView }}
+
+
+{{#view App.PBXPanelView controllerBinding="area1" }}
+	{{view App.EditableTitleView }}
+	<dd>
+	{{#if finishedloading}}
+	{{#view App.SortablePanelView }}
+		{{#each }}
+		{{view App.ExtensionView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	{{/view}}
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="area2" }}
+	{{view App.EditableTitleView }}
+	<dd>
+	{{#if finishedloading}}
+	{{#view App.SortablePanelView }}
+		{{#each }}
+		{{view App.ExtensionView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	{{/view}}
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="area3" }}
+	{{view App.EditableTitleView }}
+	<dd>
+	{{#if finishedloading}}
+	{{#view App.SortablePanelView }}
+		{{#each }}
+		{{view App.ExtensionView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	{{/view}}
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="conferences" }}
+	<dt>{{description}}</dt>
+	<dd>
+	{{#if finishedloading}}
+	<div>
+		{{#each }}
+		{{view App.ConferenceView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	</div>
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="parkinglots" }}
+	<dt>{{description}}</dt>
+	<dd>
+	{{#if finishedloading}}
+	<div>
+		{{#each }}
+		{{view App.ParkinglotView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	</div>
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+
+{{#view App.PBXPanelView controllerBinding="queues" }}
+	<dt>{{description}}</dt>
+	<dd>
+	{{#if finishedloading}}
+	<div>
+		{{#each }}
+		{{view App.QueueView}}
+		{{else}}
+		<br/>
+		{{/each}}
+	</div>
+    {{else}}
+    <img class="icon" src="modules/control_panel/images/loading.gif"/>
+    {{/if}}
+	</dd>
+{{/view}}
+
+
+{{/view }} {{/view}} </script><!-- data-template-name="desktop"  -->
+
+<script type="text/x-handlebars" data-template-name="extension">
+<div style="float:left; border: black solid 0px;">
+	<a class="pbxtooltip" href="#">
+	<img src="modules/control_panel/images/info.png"/>
+	<div>
+		
+		{{extension}}: {{channel}} - {{description}} {{#if registered}}({{ip}}){{/if}}<br/>
+		{{#if active }}
+		<ul>
+	    {{#each active}}
+	    <li>{{formatSince}}: {{remoteExten}}</li>
+	    {{/each}}
+	    </ul>
+	    {{/if}}
+		
+	</div>
+	</a>
+</div>
+<div style="float:left; width:115px; text-align:left; padding-left:4px;">
+	
+	<b>{{extension}}:</b> {{view.truncatedDescription}}<br/>
+	{{#each active}}
+	<span class="monitor">{{formatSince}}: {{remoteExten}}</span><br/>
+	{{/each}}
+	
+</div>
+
+<div style="float: right; border: black solid 0px;">
+	{{view App.DraggablePhoneIconView iconBinding="view.extensionIcon" }}
+</div>
+{{#if unreadMail }}
+<div style="float: right; border: black solid 0px;">
+	<a class="pbxtooltip" href="#" {{action "dialvoicemail" this on="doubleClick"}}>
+		<img class="icon" src="modules/control_panel/images/mail.png"/>
+		<div>New: {{NewMessages}}, Old: {{OldMessages}}</div>
+    </a>
+</div>
+{{/if}}
+
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="iptrunk">
+<div style="float:left; border: black solid 0px;">
+    <a class="pbxtooltip" href="#">
+    <img src="modules/control_panel/images/info.png"/>
+    <div>
+        
+        {{channel}} {{#if registered}}({{ip}}){{/if}}<br/>
+        {{#if active}}
+        <ul>
+	    {{#each active}}
+	    <li>{{formatSince}}: {{CallerIDNum}}</li>
+	    {{/each}}
+	    </ul>
+	    {{/if}}
+        
+    </div>
+    </a>
+</div>
+<div style="float:left; width:115px; text-align:left; padding-left:4px;">
+    
+    <b>{{view.truncatedDescription}}</b><br/>
+    {{#each active}}
+    <span class="monitor">{{formatSince}}: {{CallerIDNum}}</span><br/>
+    {{/each}}
+    
+</div>
+
+<div style="float: right; border: black solid 0px;">
+    <img class="icon" src="modules/control_panel/images/icon_trunk2.png"/>
+</div>
+
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="dahdispan">
+<div style="float:left; border: black solid 0px;">
+    <a class="pbxtooltip" href="#">
+    <img src="modules/control_panel/images/info.png"/>
+    <div>
+        
+        DAHDI/{{span}}: {{formatChanRange}}<br/>
+
+        <!-- Mostrar los números de los canales en la alarma -->
+        {{#each chan}}<span {{bindAttr style="alarmstyle"}}>{{chan}}</span>{{/each}}
+        
+        <!-- Mostrar las llamadas activas no clasificadas en un canal canal -->
+        {{#if active}}
+        <ul>
+        {{#each active}}
+        <li>{{formatSince}}: {{CallerIDNum}}</li>
+        {{/each}}
+        </ul>
+        {{/if}}
+
+        <!-- Mostrar las llamadas activas en cada canal -->
+        <ul>
+        {{#each chan}}
+            {{#if active }}
+	            <li>{{chan}}:
+	            {{#each active}}
+	                {{formatSince}}: {{CallerIDNum}}
+	            {{else}}
+	                (idle)
+	            {{/each}}
+	            </li>
+            {{/if}}
+        {{/each}}
+        </ul>
+        
+    </div>
+    </a>
+</div>
+<div style="float:left; width:135px; text-align:left; padding-left:4px;">
+    
+    <b>DAHDI/{{span}}:</b> {{formatChanRange}}<br/>
+    
+</div>
+<div style="float: right; border: black solid 0px;">
+    <img class="icon" src="modules/control_panel/images/icon_trunk2.png"/>
+</div>
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="queue">
+<div style="float:left; border: black solid 0px;">
+	<a class="pbxtooltip" href="#">
+	<img src="modules/control_panel/images/info.png"/>
+	<div>
+		
+		{{extension}}: {{description}}<br/>
+		{{#if members}}
+		Members:<br/>
+		<ul>
+		{{#each members}}<li>{{shortchannel}}</li>{{/each}}
+		</ul>
+		{{else}}
+		Not Attended
+		{{/if}}
+		<br/>
+		{{#if callers}}
+		Callers:<br/>
+		<ul>
+		{{#each callers}}
+		<li>{{CallerIDName}} &lt;{{CallerIDNum}}&gt;</li>
+		{{/each}}
+		</ul>
+		{{else}}
+		No Callers
+		{{/if}}
+		
+	</div>
+	</a>
+</div>
+<div style="float:left; width:135px; text-align:left; padding-left:4px;">
+	
+	<b>{{extension}}:</b> {{view.truncatedDescription}}<br/>
+	{{#if callers }}
+	<span class="monitor">{{callers.length}}</span><br/>
+	{{/if}}
+	
+</div>
+<div style="float: right; border: black solid 0px;">
+    {{view App.DroppableIconView icon="modules/control_panel/images/queue.png" }}
+</div>
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="conference">
+<div style="float:left; border: black solid 0px;">
+	<a class="pbxtooltip" href="#">
+	<img src="modules/control_panel/images/info.png"/>
+	<div>
+		
+		{{extension}}: {{description}}<br/>
+		{{#if callers}}
+		Callers:<br/>
+		<ul>
+		{{#each callers}}
+		<li>{{CallerIDName}} &lt;{{CallerIDNum}}&gt;</li>
+		{{/each}}
+		</ul>
+		{{else}}
+		No Callers
+		{{/if}}
+		
+	</div>
+	</a>
+</div>
+<div style="float:left; width:135px; text-align:left; padding-left:4px;">
+	
+	<b>{{extension}}:</b> {{view.truncatedDescription}}<br/>
+	{{#if callers }}
+	<span class="monitor">Participant(s): {{callers.length}} - {{formatSince}}</span><br/>
+	{{/if}}
+	
+</div>
+<div style="float: right; border: black solid 0px;">
+    {{view App.DroppableIconView icon="modules/control_panel/images/conference.png" }}
+</div>
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="parkinglot">
+<div style="float:left; border: black solid 0px;">
+	<a class="pbxtooltip" href="#">
+	<img src="modules/control_panel/images/info.png"/>
+	<div>
+		
+		{{extension}}
+		
+	</div>
+	</a>
+</div>
+<div style="float:left; width:135px; text-align:left; padding-left:4px;">
+	
+	<b>Parked ({{extension}})</b><br/>
+	{{#if shortchannel }}
+	<span class="monitor">{{shortchannel}}: {{formatTimeout}}</span><br/>
+	{{/if}}
+	
+</div>
+<div style="float: right; border: black solid 0px;">
+	{{view App.DroppableIconView icon="modules/control_panel/images/parking.png" }}
+</div>
+</script>
+
+
+<script type="text/x-handlebars" data-template-name="editable-title">
+
+{{#if editing }}
+{{view Ember.TextField valueBinding="description" }}
+<button {{action "save" bubbles=false }}>Save</button>
+{{else}}
+{{description}} -- {{length}} ext
+<span class="paneledittitle" {{action "edit" bubbles=false }}>[Edit Name]</span>
+{{/if}}
+
+</script>
+
+</div>
+<script type="text/javascript">
+var arrLang_main = {"LBL_HIDE_ALL":"Hide All","LBL_SHOW_ALL":"Show All"};
+var var_init = {"ESTADO_CLIENTE_HASH":"40cd750bba9870f18aada2478b24840a","ESTADO_PANELES":{"Extension":{"name":"Extension","width":"1153","description":"Extensions","color":"#DEE4FA"},"Area1":{"name":"Area1","width":"403","description":"Area 1","color":"#FCF9D2"},"Area2":{"name":"Area2","width":"403","description":"Area 2","color":"#D4DCDC"},"Area3":{"name":"Area3","width":"403","description":"Area 3","color":"#E0FFEF"},"Queues":{"name":"Queues","width":"403","description":"Queues","color":"#FED0CF"},"Trunks":{"name":"Trunks","width":"1153","description":"DAHDI Trunks","color":"#D0FFD0"},"TrunksSIP":{"name":"TrunksSIP","width":"1153","description":"SIP\/IAX Trunks","color":"#D0FFFF"},"Conferences":{"name":"Conferences","width":"403","description":"Conferences","color":"#DACCCA"},"Parkinglots":{"name":"Parkinglots","width":"403","description":"Parking lots","color":"#F5F5DC"}},"TIMESTAMP_START":1792101987}
+</script>
+
+                </div>
+            </div>
+        </div><!-- neo-contentbox -->
+
+        <!-- Footer -->
+        <footer class="main" style="margin-left:16px;">
+            <a href="http://www.issabel.org" style="color: #444; text-decoration: none;" target='_blank'>Issabel</a> is licensed under <a href="http://www.opensource.org/licenses/gpl-license.php" target='_blank' style="color: #445; text-decoration: none;" >GPL</a>. 2006 - 2026.
+        </footer>
+
+                </div><!-- main-content -->
+
+        <div id="neo-sticky-note">
+            <div id="neo-sticky-note-text"></div>
+            <div id="neo-sticky-note-text-edit">
+                <textarea id="neo-sticky-note-textarea"></textarea>
+                <div id="neo-sticky-note-text-char-count"></div>
+                <input type="button" value="Save Note" id="neo-submit-button" />
+                <div id="auto-popup">AutoPopUp <input type="checkbox" id="neo-sticky-note-auto-popup" value="1" /></div>
+            </div>
+            <div id="neo-sticky-note-text-edit-delete"></div>
+        </div>
+
+        <!-- Neo Progress Bar -->
+        <div class="neo-modal-issabel-popup-box">
+            <div class="neo-modal-issabel-popup-title"></div>
+            <div class="neo-modal-issabel-popup-close"></div>
+            <div class="neo-modal-issabel-popup-content"></div>
+        </div>
+        <div class="neo-modal-issabel-popup-blockmask"></div>
+        <!-- Bottom Scripts -->
+        <script src="themes/tenant/js/gsap/main-gsap.js"></script>
+        <script src="themes/tenant/js/bootstrap.js"></script>
+        <script src="themes/tenant/js/joinable.js"></script>
+        <script src="themes/tenant/js/resizeable.js"></script>
+        <script src="themes/tenant/js/neon-api.js"></script>
+        <script src="themes/tenant/js/jquery.validate.min.js"></script>
+        <script src="themes/tenant/js/neon-login.js"></script>
+        <script src="themes/tenant/js/neon-custom.js"></script>
+        <script src="themes/tenant/js/neon-demo.js"></script>
+    </div>
+</body>
+</html>

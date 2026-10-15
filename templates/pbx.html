@@ -8,11 +8,11 @@
 
 <div class="panel mb-4">
   {% if not cfg.enabled %}
-    <div class="alert alert-warning mb-0">اتصال به PBX تنظیم نشده است. متغیرهای محیطی <code>PBX_AMI_HOST</code>، <code>PBX_AMI_USER</code> و <code>PBX_AMI_SECRET</code> را ست کنید (راهنما در DEPLOYMENT.md) و برنامه را ری‌استارت کنید.</div>
+    <div class="alert alert-warning mb-0">اتصال به PBX تنظیم نشده است. یا متغیرهای محیطی <code>PBX_AMI_HOST</code>، <code>PBX_AMI_USER</code> و <code>PBX_AMI_SECRET</code> را ست کنید، یا برای اتصال از طریق وب‌پنل ایزابل (بدون AMI) <code>PBX_WEB_HOST</code>، <code>PBX_WEB_USER</code> و <code>PBX_WEB_PASS</code> را (راهنما در DEPLOYMENT.md)، و برنامه را ری‌استارت کنید.</div>
   {% else %}
     <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center">
       <div class="small">
-        <div>سرور: <span dir="ltr">{{ cfg.host }}:{{ cfg.port }}</span> · بروزرسانی هر {{ cfg.interval }} ثانیه</div>
+        <div>سرور: {% if cfg.source == 'web' %}<span dir="ltr">{{ cfg.web_host }}</span> (وب‌پنل ایزابل){% else %}<span dir="ltr">{{ cfg.host }}:{{ cfg.port }}</span> (AMI){% endif %} · بروزرسانی هر {{ cfg.interval }} ثانیه</div>
         <div>آخرین همگام‌سازی موفق: {% if state.last_success %}{{ state.last_success | local_dt }}{% if state.last_duration %} ({{ '%.1f'|format(state.last_duration) }} ثانیه){% endif %}{% else %}هنوز انجام نشده{% endif %}</div>
         {% if state.last_error %}<div class="text-danger mt-1">آخرین خطا: <span dir="ltr">{{ state.last_error }}</span></div>{% endif %}
       </div>

@@ -140,7 +140,7 @@
         data-created="{{ e.created_at | local_dt }}"
         data-updated="{{ e.updated_at | local_dt }}"
         data-present="{{ '1' if e.is_present else '0' }}"
-        data-phonestatus="{{ phone_status_labels[phone_status(e)] if phone_status(e) else '' }}"
+        data-phonestatus="{{ phone_label(e) }}"
         role="button" tabindex="0">
         <div class="d-flex justify-content-between align-items-start card-top-row">
           <div class="card-main-info">
@@ -151,7 +151,7 @@
           <div class="card-status-col">
             <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="افزودن به علاقه‌مندی‌ها">☆</button>
             <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span>
-            {% set ps = phone_status(e) %}{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% endif %}
+            {% set ps = phone_status(e) %}{% if ps %}<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill>{{ phone_label(e) }}</span>{% endif %}
             <!-- <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ '🟢 حاضر' if e.is_present else '🔴 خارج از شیفت' }}</span> -->
           </div>
         </div>
@@ -176,14 +176,14 @@
     </thead>
     <tbody>
       {% for e in entries %}
-      <tr>
+      <tr data-ext="{{ e.extension }}">
         <td class="fw-bold text-primary" dir="ltr">{{ e.extension }}</td>
         <td>{{ e.title }}</td>
         <td>{{ e.person_name or '—' }}</td>
         <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
         <td>{{ e.location or '—' }}</td>
         <td><span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span></td>
-        {% if show_phone_status %}{% set ps = phone_status(e) %}<td>{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% else %}—{% endif %}</td>{% endif %}
+        {% if show_phone_status %}{% set ps = phone_status(e) %}<td data-phone-cell>{% if ps %}<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill>{{ phone_label(e) }}</span>{% else %}—{% endif %}</td>{% endif %}
         <td><button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره">📋</button></td>
       </tr>
       {% else %}
