@@ -7,3 +7,13 @@ hotel_extensions.db
 tmp_imports/
 logs/
 .env
+
+# scratch / local data
+*_backup_*.db
+*.csv
+!sample_import.csv
+*.xlsx
+panel.html
+page.html
+cp.js
+*.patch
