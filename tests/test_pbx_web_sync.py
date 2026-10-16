@@ -61,7 +61,7 @@ class ConfigTests(unittest.TestCase):
         cfg = self.cfg(**{k: v for k, v in WEB_ENV.items() if k.startswith('PBX_WEB_')})
         self.assertEqual((cfg['enabled'], cfg['source']), (True, 'web'))
         self.assertEqual((cfg['interval'], cfg['web_verify_ssl']), (30, False))  # documented defaults
-        self.assertEqual((cfg['web_login_path'], cfg['web_peers_path']), ('/index.php', '/index.php?menu=asterisk_info&rawmode=yes'))
+        self.assertEqual((cfg['web_login_path'], cfg['web_peers_path']), ('/index.php', '/index.php?menu=control_panel'))
 
     def test_an_incomplete_web_setting_is_off(self):
         self.assertFalse(self.cfg(PBX_WEB_HOST='https://x', PBX_WEB_USER='u')['enabled'])
@@ -120,7 +120,7 @@ class WebSyncTests(WebCase):
         with mock.patch.object(m, 'shared_scraper', return_value=scraper) as factory, self.app.app_context():
             m.sync_pbx_once()
         factory.assert_called_once_with('https://192.168.1.100', 'monitor', 'web-secret-pass', False, 10.0, '/index.php',
-                                        '/index.php?menu=asterisk_info&rawmode=yes')
+                                        '/index.php?menu=control_panel')
         self.assertEqual(scraper.calls, 1)
 
     def test_runner_and_thread_work_with_the_web_source(self):

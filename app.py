@@ -38,6 +38,7 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
+import outage_monitor
 from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent, shared_scraper
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -524,6 +525,28 @@ class ActivityLog(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class PhoneOutage(db.Model):
+    """One row per period a monitored phone was not registered on the PBX (see outage_monitor.py).
+
+    started_at is when the sync first saw it offline; ended_at stays empty while the outage goes on.
+    Unconfirmed rows (offline for fewer syncs than PBX_OUTAGE_CONFIRM_SYNCS) are never shown or logged
+    and are deleted again if the phone comes back."""
+    id = db.Column(db.Integer, primary_key=True)
+    extension = db.Column(db.String(20), nullable=False, index=True)
+    title = db.Column(db.String(150))  # snapshot: the extension may be renamed later
+    last_ip = db.Column(db.String(45))
+    started_at = db.Column(db.DateTime, nullable=False, index=True)
+    ended_at = db.Column(db.DateTime, index=True)
+    end_reason = db.Column(db.String(10))  # online = the phone came back; stopped = no longer monitored
+    confirmed = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    offline_syncs = db.Column(db.Integer, default=1, nullable=False)
+
+    @property
+    def duration_seconds(self):
+        end = self.ended_at or datetime.utcnow()
+        return max(0, int((end - self.started_at).total_seconds()))
+
+
 def _ensure_columns(engine):
     """Lightweight in-place migration: add any columns that a pre-existing
     SQLite database might be missing, without touching existing rows."""
@@ -714,7 +737,8 @@ def apply_mac_plan(plan, overwrite=False):
 # Database mapping of the status fields: reg_status = online/offline/unknown, rtt_ms = latency in
 # ms, status_updated_at = time of the last successful query.
 PBX_EXTENSION_NAME = re.compile(r'^[0-9]{1,6}$')
-pbx_sync_state = {'running': False, 'last_attempt': None, 'last_success': None, 'last_error': None, 'last_duration': None, 'summary': None}
+pbx_sync_state = {'running': False, 'last_attempt': None, 'last_success': None, 'last_error': None, 'last_duration': None, 'summary': None,
+                  'error_since': None}  # error_since: when the current streak of failed syncs began (for Log.txt)
 pbx_sync_lock = threading.Lock()
 _ua_cursor = {'offset': 0}
 
@@ -756,8 +780,46 @@ def pbx_config():
         'interval': max(15, number('PBX_SYNC_INTERVAL', str(number('PBX_SYNC_INTERVAL_SECONDS', '30')))),
         'timeout': number('PBX_AMI_TIMEOUT', '5', float),
         'ua_batch': max(0, number('PBX_UA_BATCH', '60')),
+        # Outage log: a phone must stay offline this many syncs in a row before it counts (blips are ignored)
+        'outage_enabled': flag('PBX_OUTAGE_MONITOR', True),
+        'outage_confirm_syncs': max(1, number('PBX_OUTAGE_CONFIRM_SYNCS', '2')),
+        'outage_kinds': tuple(k for k in (p.strip() for p in os.getenv('PBX_OUTAGE_KINDS', 'staff,room').split(',')) if k in EXTENSION_KINDS) or ('staff', 'room'),
         'enabled': source is not None,
     }
+
+
+OUTAGE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
+def make_outage_tracker(cfg):
+    """Tracker for one sync cycle, wired to the PhoneOutage table (call inside an app context)."""
+    open_outages = {o.extension: o for o in PhoneOutage.query.filter(PhoneOutage.ended_at.is_(None)).all()}
+
+    def create(**fields):
+        record = PhoneOutage(**fields)
+        db.session.add(record)
+        return record
+
+    return outage_monitor.OutageTracker(open_outages, create, db.session.delete,
+                                        lambda value: format_local_datetime(value, OUTAGE_TIME_FORMAT),
+                                        cfg['outage_confirm_syncs'])
+
+
+def note_pbx_failure(message):
+    """Log (once per failure streak) that the PBX itself cannot be read; call before last_error is set."""
+    if pbx_sync_state['last_error'] is None and pbx_config()['outage_enabled']:
+        now = datetime.utcnow()
+        pbx_sync_state['error_since'] = now
+        outage_monitor.write_pbx_event('PBX-LOST', f'cannot read the PBX: {message}', format_local_datetime(now, OUTAGE_TIME_FORMAT))
+
+
+def note_pbx_recovered():
+    since = pbx_sync_state.get('error_since')
+    pbx_sync_state['error_since'] = None
+    if since is not None and pbx_config()['outage_enabled']:
+        now = datetime.utcnow()
+        lasted = outage_monitor.format_duration((now - since).total_seconds())
+        outage_monitor.write_pbx_event('PBX-OK', f'reachable again after {lasted}', format_local_datetime(now, OUTAGE_TIME_FORMAT))
 
 
 def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
@@ -772,7 +834,11 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     numeric peer; peers that are new to us are created hidden from the public
     (room by number pattern, otherwise 'pending'); trashed extensions are left
     alone; a phone's model / MAC are filled from its User-Agent only when empty.
-    updated_at is deliberately NOT touched: it keeps meaning 'last human edit'."""
+    updated_at is deliberately NOT touched: it keeps meaning 'last human edit'.
+
+    Outages: a monitored phone (active, kind in PBX_OUTAGE_KINDS) that goes from online to offline is
+    recorded in PhoneOutage and logged to Log.txt once it has stayed offline PBX_OUTAGE_CONFIRM_SYNCS
+    syncs; the record is closed when it comes back. The log lines are written after the commit."""
     started = time.monotonic()
     now = now or datetime.utcnow()
     cfg = pbx_config()
@@ -811,6 +877,9 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
 
     created = in_trash = 0
     counts = {'online': 0, 'offline': 0, 'unknown': 0}
+    monitor = make_outage_tracker(cfg) if cfg['outage_enabled'] else None
+    observed = set()
+    fresh = timedelta(minutes=PBX_STATUS_STALE_MINUTES)
     for name, peer in numeric.items():
         entry = entries.get(name)
         if entry is None:
@@ -823,6 +892,8 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
         elif entry.is_deleted:
             in_trash += 1
             continue
+        # the state of the previous sync, trusted only while it is recent (not after a long pause)
+        prior = entry.reg_status if entry.status_updated_at and now - entry.status_updated_at <= fresh else None
         entry.reg_status = peer.state
         entry.rtt_ms = peer.rtt_ms if peer.state == 'online' else None
         if peer.ip:
@@ -839,6 +910,9 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
             if not entry.mac and info['mac']:
                 entry.mac = info['mac']
         counts[peer.state] += 1
+        if monitor is not None and entry.is_active and entry.kind in cfg['outage_kinds']:
+            observed.add(name)
+            monitor.observe(name, peer.state, prior, entry.title, entry.last_ip, now)
 
     not_on_pbx = 0
     for name, entry in entries.items():
@@ -852,12 +926,17 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     for entry in list(db.session.dirty):
         if isinstance(entry, Extension) and entry.id is not None:
             flag_modified(entry, 'updated_at')  # keep the old updated_at: onupdate must not fire for sync writes
+    if monitor is not None and numeric:  # an empty answer must never close every outage at once
+        monitor.stop_unobserved(observed, now)
     if created:
         log_activity('created', 'extension', f'همگام‌سازی PBX: {created} داخلی جدید', details='ساخته‌شده از روی ایزابل؛ مخفی از پرسنل تا تأیید مدیر')
         bump_data_version()
     db.session.commit()
+    if monitor is not None:
+        monitor.write_log()  # only now: the file must never describe something the database does not hold
     return {'peers': len(peers), 'extensions': len(numeric), 'ignored': len(peers) - len(numeric), 'created': created,
-            'in_trash': in_trash, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2), **counts}
+            'in_trash': in_trash, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2),
+            'went_offline': monitor.went_offline if monitor else 0, 'came_online': monitor.came_online if monitor else 0, **counts}
 
 
 def run_pbx_sync(app_obj, client_factory=None):
@@ -874,6 +953,7 @@ def run_pbx_sync(app_obj, client_factory=None):
             except (AMIError, OSError) as exc:
                 db.session.rollback()
                 message = str(exc)
+                note_pbx_failure(message)
                 if message != pbx_sync_state['last_error']:
                     app_obj.logger.warning('PBX sync failed: %s', message)
                 pbx_sync_state['last_error'] = message
@@ -881,10 +961,12 @@ def run_pbx_sync(app_obj, client_factory=None):
             except Exception:
                 db.session.rollback()
                 app_obj.logger.exception('PBX sync crashed')
+                note_pbx_failure('internal error while syncing; see app.log')
                 pbx_sync_state['last_error'] = 'خطای داخلی در همگام‌سازی؛ جزئیات در لاگ سرور ثبت شد.'
                 return False, pbx_sync_state['last_error']
         if pbx_sync_state['last_error']:
             app_obj.logger.info('PBX sync recovered after: %s', pbx_sync_state['last_error'])
+            note_pbx_recovered()
         pbx_sync_state.update(last_success=datetime.utcnow(), last_error=None, summary=summary, last_duration=time.monotonic() - started)
         return True, summary
     finally:
@@ -978,6 +1060,9 @@ def create_app():
         file_handler.setLevel(logging.INFO)
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
+
+    # Log.txt: one line per phone outage (went offline / came back / how long); PBX_OUTAGE_LOG moves it
+    outage_monitor.setup_log_file(os.getenv('PBX_OUTAGE_LOG', '').strip() or os.path.join(BASE_DIR, 'logs', outage_monitor.LOG_FILE_NAME))
 
     @app.route('/robots.txt')
     def robots_txt():
