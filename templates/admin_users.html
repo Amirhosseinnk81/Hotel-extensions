@@ -30,7 +30,7 @@
           <td>{% if u.must_change_password %}<span class="badge text-bg-warning">در انتظار تغییر رمز</span>{% else %}<span class="badge text-bg-success">فعال</span>{% endif %}</td>
           <td class="text-nowrap">
             {% if u.id != current_user.id %}
-            <form action="{{ url_for('delete_user', user_id=u.id) }}" method="post" class="d-inline" onsubmit="return confirm('این مدیر حذف شود؟')">
+            <form action="{{ url_for('delete_user', user_id=u.id) }}" method="post" class="d-inline" data-confirm="این مدیر حذف شود؟" data-confirm-title="حذف مدیر" data-confirm-label="بله، حذف کن">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger">حذف</button>
             </form>

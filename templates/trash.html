@@ -22,7 +22,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-success">بازگردانی</button>
             </form>
-            <form action="{{ url_for('purge_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('این داخلی برای همیشه حذف شود؟ این کار قابل بازگشت نیست.')">
+            <form action="{{ url_for('purge_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="این داخلی برای همیشه حذف شود؟ این کار قابل بازگشت نیست." data-confirm-title="حذف نهایی" data-confirm-label="بله، برای همیشه حذف کن">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger">حذف همیشگی</button>
             </form>

@@ -82,7 +82,7 @@
   <div class="action-card action-card-danger">
     <div class="action-card-head"><span class="action-icon">⚠</span><h6>پاک‌سازی همه داخلی‌ها</h6></div>
     <p class="action-desc">همه به سطل بازیافت منتقل می‌شوند و از آنجا قابل بازگردانی هستند.</p>
-    <form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" onsubmit="return confirm('همه داخلی‌ها به سطل بازیافت منتقل شوند؟')">
+    <form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" data-confirm="همه داخلی‌ها به سطل بازیافت منتقل شوند؟ می‌توانید بعداً از سطل بازیافت برشان گردانید." data-confirm-title="انتقال همه داخلی‌ها" data-confirm-label="بله، منتقل کن">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input name="confirmation" class="form-control form-control-sm" placeholder="بنویسید: پاک کن" required>
       <button class="btn btn-danger btn-sm text-nowrap">پاک‌سازی</button>
@@ -128,7 +128,7 @@
             <span class="dept-chip-count">{{ dept_icon(d.name) }} {{ d.extension_entries|rejectattr('is_deleted')|list|length }} داخلی</span>
             <div class="dept-chip-actions">
               <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="ذخیره">✓</button>
-              <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" onsubmit="return confirm('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.')">
+              <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" data-confirm="این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند." data-confirm-title="حذف بخش" data-confirm-label="بله، حذف کن">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-sm btn-outline-danger" title="حذف">✕</button>
               </form>
@@ -166,7 +166,7 @@
     <span class="bulk-count"><span id="bulkSelectedCount">0</span> مورد انتخاب شده</span>
     <button type="submit" formaction="{{ url_for('bulk_activate') }}" class="btn btn-sm btn-outline-success" disabled>فعال‌سازی</button>
     <button type="submit" formaction="{{ url_for('bulk_deactivate') }}" class="btn btn-sm btn-outline-secondary" disabled>غیرفعال‌سازی</button>
-    <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled onclick="return confirm('موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟')">انتقال به سطل بازیافت</button>
+    <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled data-confirm="موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟" data-confirm-title="انتقال به سطل بازیافت" data-confirm-label="بله، منتقل کن">انتقال به سطل بازیافت</button>
   </form>
 
   <form id="tileDeleteForm" method="post" class="d-none">
@@ -229,7 +229,7 @@
           </td>
           <td class="text-nowrap">
             <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a>
-            <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" onsubmit="return confirm('این داخلی به سطل بازیافت منتقل شود؟')">
+            <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید." data-confirm-title="انتقال به سطل بازیافت" data-confirm-label="بله، منتقل کن">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger">حذف</button>
             </form>

@@ -3,14 +3,225 @@
 
   var THEME_KEY = 'hp_theme';
   var FAV_KEY = 'hp_favorites';
+  var VIEW_KEY = 'hp_view_mode';
+  var STATE_FILTER_KEY = 'hp_status_filter';
   var ADMIN_VIEW_KEY = 'hp_admin_view';
   var bulkRefresh = null;  // set by initBulkSelect; the admin list calls it after its rows change
+
+  /* ---------------- Small helpers ---------------- */
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function make(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+  function closest(node, sel) { return node && node.closest ? node.closest(sel) : null; }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtTime(iso) {
+    if (!iso) return '';
+    var d = new Date(String(iso).replace(/(\.\d{3})\d+/, '$1'));
+    if (isNaN(d.getTime())) return '';
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  /* ---------------- Toast notifications ---------------- */
+  var TOAST_ICONS = { success: '✓', danger: '✕', warning: '!', info: 'i' };
+  var TOAST_ALIASES = { error: 'danger', message: 'info', primary: 'info', secondary: 'info' };
+
+  function toast(message, type, opts) {
+    var stack = $('#toastStack');
+    if (!stack || !message) return null;
+    type = TOAST_ALIASES[type] || type || 'info';
+    if (!TOAST_ICONS[type]) type = 'info';
+    opts = opts || {};
+    var duration = opts.duration || (type === 'danger' || type === 'warning' ? 8000 : 4500);
+
+    while (stack.children.length >= 4) removeToast(stack.firstElementChild, true);
+
+    var item = make('div', 'toast-item toast-' + type);
+    item.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+    item.appendChild(make('span', 'toast-icon', TOAST_ICONS[type]));
+    item.appendChild(make('div', 'toast-body', message));
+    var close = make('button', 'toast-close', '✕');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'بستن');
+    close.addEventListener('click', function () { removeToast(item); });
+    item.appendChild(close);
+
+    var timer = null;
+    function arm(ms) { clearTimeout(timer); timer = setTimeout(function () { removeToast(item); }, ms); }
+    item.addEventListener('mouseenter', function () { clearTimeout(timer); });
+    item.addEventListener('mouseleave', function () { arm(2500); });
+    item._clear = function () { clearTimeout(timer); };
+
+    stack.appendChild(item);
+    requestAnimationFrame(function () { item.classList.add('show'); });
+    arm(duration);
+    return item;
+  }
+
+  function removeToast(item, instant) {
+    if (!item || item._removing) return;
+    item._removing = true;
+    if (item._clear) item._clear();
+    if (instant) { item.remove(); return; }
+    item.classList.remove('show');
+    item.classList.add('leaving');
+    setTimeout(function () { item.remove(); }, 220);
+  }
+
+  function initFlashToasts() {
+    var seeds = $('#flashSeeds');
+    if (!seeds) return;
+    $$('[data-flash]', seeds).forEach(function (node, i) {
+      var text = node.textContent.trim();
+      var category = node.getAttribute('data-category');
+      setTimeout(function () { toast(text, category); }, i * 120);
+    });
+    seeds.remove();
+  }
+
+  /* ---------------- Confirmation dialog (replaces window.confirm) ---------------- */
+  var confirmCtx = null;
+
+  function openConfirm(opts, onOk) {
+    var root = $('#confirmDialog');
+    if (!root) {
+      if (window.confirm(opts.message || 'ادامه می‌دهید؟')) onOk();
+      return;
+    }
+    $('#confirmTitle', root).textContent = opts.title || 'تأیید عملیات';
+    $('#confirmMessage', root).textContent = opts.message || '';
+    var okBtn = $('[data-modal-confirm]', root);
+    okBtn.textContent = opts.okLabel || 'بله، ادامه بده';
+    okBtn.className = 'btn ' + (opts.tone === 'primary' ? 'btn-primary' : 'btn-danger');
+    root.setAttribute('data-tone', opts.tone === 'primary' ? 'primary' : 'danger');
+
+    confirmCtx = { root: root, onOk: onOk, returnFocus: document.activeElement };
+    root.hidden = false;
+    document.documentElement.classList.add('ui-lock');
+    requestAnimationFrame(function () {
+      root.classList.add('open');
+      var cancel = $('[data-modal-cancel]', root);
+      if (cancel) cancel.focus();   // the safe choice is focused first
+    });
+  }
+
+  function closeConfirm(accepted) {
+    if (!confirmCtx) return;
+    var ctx = confirmCtx;
+    confirmCtx = null;
+    ctx.root.classList.remove('open');
+    document.documentElement.classList.remove('ui-lock');
+    setTimeout(function () { ctx.root.hidden = true; }, 160);
+    if (ctx.returnFocus && ctx.returnFocus.focus && !accepted) {
+      try { ctx.returnFocus.focus(); } catch (e) {}
+    }
+    if (accepted) ctx.onOk();
+  }
+
+  function initConfirm() {
+    var root = $('#confirmDialog');
+    if (root) {
+      root.addEventListener('click', function (e) {
+        if (closest(e.target, '[data-modal-confirm]')) closeConfirm(true);
+        else if (closest(e.target, '[data-modal-cancel]') || closest(e.target, '[data-modal-close]')) closeConfirm(false);
+      });
+      root.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeConfirm(false); return; }
+        if (e.key !== 'Tab') return;
+        var focusables = $$('button', root).filter(function (b) { return !b.disabled; });
+        if (!focusables.length) return;
+        var first = focusables[0], last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      });
+    }
+
+    function describe(node) {
+      return {
+        message: node.getAttribute('data-confirm'),
+        title: node.getAttribute('data-confirm-title'),
+        okLabel: node.getAttribute('data-confirm-label'),
+        tone: node.getAttribute('data-confirm-tone')
+      };
+    }
+
+    /* Buttons carrying data-confirm (e.g. the bulk "move to trash" button, which has its own formaction) */
+    document.addEventListener('click', function (e) {
+      var btn = closest(e.target, 'button[data-confirm], input[data-confirm]');
+      if (!btn || btn.disabled) return;
+      if (btn._confirmed) { btn._confirmed = false; return; }   // second pass, let the click through
+      e.preventDefault();
+      openConfirm(describe(btn), function () { btn._confirmed = true; btn.click(); });
+    });
+
+    /* Whole forms carrying data-confirm (e.g. the per-row delete forms) */
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || !form.hasAttribute || !form.hasAttribute('data-confirm')) return;
+      if (form._confirmed) { form._confirmed = false; return; }
+      e.preventDefault();
+      openConfirm(describe(form), function () {
+        form._confirmed = true;
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      });
+    }, true);
+  }
+
+  /* ---------------- Loading state on submit buttons ---------------- */
+  function startLoading(btn, text) {
+    if (!btn || btn.getAttribute('data-loading-active') === '1') return;
+    btn.setAttribute('data-loading-active', '1');
+    btn._originalHtml = btn.innerHTML;
+    btn.classList.add('is-loading');
+    btn.innerHTML = '';
+    btn.appendChild(make('span', 'btn-spinner'));
+    btn.appendChild(make('span', 'btn-loading-text', text));
+    btn.setAttribute('aria-busy', 'true');
+    // disabled one tick later: a disabled submitter would be left out of the posted form data
+    setTimeout(function () { btn.disabled = true; }, 0);
+  }
+
+  function stopLoading(btn) {
+    if (!btn || btn.getAttribute('data-loading-active') !== '1') return;
+    btn.removeAttribute('data-loading-active');
+    btn.classList.remove('is-loading');
+    btn.removeAttribute('aria-busy');
+    if (btn._originalHtml !== undefined) btn.innerHTML = btn._originalHtml;
+    btn.disabled = false;
+  }
+
+  function initLoadingButtons() {
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || !form.getAttribute) return;
+      var submitter = e.submitter || null;
+      var wants = form.hasAttribute('data-loading') || (submitter && submitter.hasAttribute('data-loading-text'));
+      if (!wants || e.defaultPrevented) return;
+      if (form._submitting) { e.preventDefault(); return; }   // a second click while the first is in flight
+      form._submitting = true;
+      var btn = submitter && submitter.hasAttribute('data-loading-text') ? submitter
+        : form.querySelector('[data-loading-text]') || submitter || form.querySelector('button[type="submit"], button:not([type])');
+      var text = (btn && btn.getAttribute('data-loading-text')) || form.getAttribute('data-loading-text') || 'در حال ارسال...';
+      startLoading(btn, text);
+    });
+
+    // coming back with the browser's back button must not leave a stuck spinner
+    window.addEventListener('pageshow', function (e) {
+      if (!e.persisted) return;
+      $$('[data-loading-active="1"]').forEach(stopLoading);
+      $$('form').forEach(function (f) { f._submitting = false; });
+    });
+  }
 
   /* ---------------- Theme ---------------- */
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
-    document.querySelectorAll('.theme-btn').forEach(function (btn) {
+    $$('.theme-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.themeValue === theme);
     });
   }
@@ -19,10 +230,8 @@
     var current = 'light';
     try { current = localStorage.getItem(THEME_KEY) || 'light'; } catch (e) {}
     applyTheme(current);
-    document.querySelectorAll('.theme-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        applyTheme(btn.dataset.themeValue);
-      });
+    $$('.theme-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyTheme(btn.dataset.themeValue); });
     });
   }
 
@@ -36,17 +245,17 @@
 
   function paintFavorites() {
     var favs = getFavorites();
-    document.querySelectorAll('.fav-btn').forEach(function (btn) {
+    $$('.fav-btn').forEach(function (btn) {
       var on = favs.indexOf(btn.dataset.ext) !== -1;
       btn.classList.toggle('active', on);
-      btn.textContent = on ? '\u2605' : '\u2606';
+      btn.textContent = on ? '★' : '☆';
     });
   }
 
   function initFavorites() {
     paintFavorites();
     document.addEventListener('click', function (e) {
-      var btn = e.target.closest ? e.target.closest('.fav-btn') : null;
+      var btn = closest(e.target, '.fav-btn');
       if (!btn) return;
       var ext = btn.dataset.ext;
       var list = getFavorites();
@@ -54,41 +263,20 @@
       if (idx === -1) list.push(ext); else list.splice(idx, 1);
       saveFavorites(list);
       paintFavorites();
-      applyFavoriteFilter();
+      if (directory.apply) directory.apply();
     });
-  }
-
-  function applyFavoriteFilter() {
-    var checkbox = document.getElementById('onlyFavCheckbox');
-    if (!checkbox) return;
-    var favs = getFavorites();
-    var onlyFav = checkbox.checked;
-    document.querySelectorAll('.extension-card').forEach(function (card) {
-      var wrapper = card.closest('[data-card-wrapper]');
-      if (!wrapper) return;
-      var ext = card.dataset.ext;
-      var show = !onlyFav || favs.indexOf(ext) !== -1;
-      wrapper.style.display = show ? '' : 'none';
-    });
-  }
-
-  function initFavoriteFilterToggle() {
-    var checkbox = document.getElementById('onlyFavCheckbox');
-    if (!checkbox) return;
-    checkbox.addEventListener('change', applyFavoriteFilter);
-    applyFavoriteFilter();
   }
 
   /* ---------------- Copy to clipboard ---------------- */
   function initCopyButtons() {
     document.addEventListener('click', function (e) {
-      var btn = e.target.closest ? e.target.closest('.copy-btn') : null;
+      var btn = closest(e.target, '.copy-btn');
       if (!btn) return;
       e.preventDefault();
       var ext = btn.dataset.ext;
       var done = function () {
         var original = btn.textContent;
-        btn.textContent = '\u2713';
+        btn.textContent = '✓';
         btn.classList.add('copied');
         setTimeout(function () {
           btn.textContent = original;
@@ -111,12 +299,226 @@
 
   /* ---------------- Print ---------------- */
   function initPrintButtons() {
-    document.querySelectorAll('.btn-print').forEach(function (btn) {
+    $$('.btn-print').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
         e.preventDefault();
         window.print();
       });
     });
+  }
+
+  /* ---------------- Directory: instant search + status chips + favourites ---------------- */
+  var directory = { apply: null, reload: null };
+
+  function initDirectoryFilters() {
+    var input = $('#instantSearch');
+    var chips = $$('.filter-chip');
+    var favBox = $('#onlyFavCheckbox');
+    var emptyBox = $('#filterEmpty');
+    var clearBtn = $('#searchClear');
+    directory.apply = function () {};
+    directory.reload = function () {};
+    if (!$('#cardsView') && !$('#tableView')) return;
+
+    var items = [];
+    var phoneFilter = 'all';
+    try {
+      var saved = sessionStorage.getItem(STATE_FILTER_KEY);
+      if (saved === 'online' || saved === 'offline') phoneFilter = saved;
+    } catch (e) {}
+    if (!chips.length) phoneFilter = 'all';
+
+    // the result lists are replaced by the live search, so the item list is rebuilt after every swap
+    function collect() {
+      items = [];
+      $$('[data-card-wrapper]').forEach(function (wrapper) {
+        var card = $('.extension-card', wrapper);
+        if (card) items.push({ node: wrapper, data: card, kind: 'card' });
+      });
+      $$('#tableView tbody tr[data-ext]').forEach(function (row) {
+        items.push({ node: row, data: row, kind: 'row' });
+      });
+    }
+
+    function syncSearchUi() {
+      if (!input) return;
+      if (clearBtn) clearBtn.hidden = !input.value;
+      var iconBox = closest(input, '.input-icon');
+      if (iconBox) iconBox.classList.toggle('has-value', !!input.value);
+    }
+
+    function apply() {
+      var info = $('#filterInfo');   // lives inside the results header, which the live search swaps
+      var favs = favBox && favBox.checked ? getFavorites() : null;
+      var tally = { all: 0, online: 0, offline: 0 };
+      var shownCards = 0, totalCards = 0, shownRows = 0, totalRows = 0;
+
+      items.forEach(function (item) {
+        var d = item.data.dataset;
+        var base = !favs || favs.indexOf(d.ext) !== -1;
+        var phone = d.phoneState || '';
+        var show = base && (phoneFilter === 'all' || phone === phoneFilter);
+
+        if (item.kind === 'card') {
+          totalCards++;
+          if (base) {
+            tally.all++;
+            if (phone === 'online') tally.online++;
+            else if (phone === 'offline') tally.offline++;
+          }
+          if (show) shownCards++;
+        } else {
+          totalRows++;
+          if (show) shownRows++;
+        }
+        item.node.classList.toggle('is-filtered', !show);
+        if (!show && item.kind === 'row') closeDetailFor(item.node);
+      });
+
+      chips.forEach(function (chip) {
+        var key = chip.getAttribute('data-filter');
+        chip.setAttribute('aria-pressed', String(phoneFilter === key));
+        chip.classList.toggle('active', phoneFilter === key);
+        var count = $('[data-chip-count]', chip);
+        if (count) count.textContent = String(tally[key] != null ? tally[key] : 0);
+      });
+
+      var total = totalCards || totalRows;
+      var shown = totalCards ? shownCards : shownRows;
+      var filtering = phoneFilter !== 'all' || favs !== null;
+      if (info) {
+        if (filtering && total) {
+          info.textContent = 'نمایش ' + shown + ' از ' + total + ' مورد این صفحه';
+          info.hidden = false;
+        } else {
+          info.hidden = true;
+        }
+      }
+      if (emptyBox) emptyBox.hidden = !(filtering && total > 0 && shown === 0);
+    }
+
+    function clearSearch() {
+      if (!input || !input.value) return;
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));   // the live search listens on the form
+    }
+
+    if (input) {
+      input.addEventListener('input', syncSearchUi);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Escape') clearSearch(); });
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () { clearSearch(); input.focus(); });
+    }
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        phoneFilter = chip.getAttribute('data-filter') || 'all';
+        try { sessionStorage.setItem(STATE_FILTER_KEY, phoneFilter); } catch (e) {}
+        apply();
+      });
+    });
+    if (favBox) favBox.addEventListener('change', apply);
+
+    // "/" jumps to the search box, like most dashboards
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || !input) return;
+      var tag = (e.target && e.target.tagName) || '';
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (e.target && e.target.isContentEditable)) return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    });
+
+    directory.apply = apply;
+    directory.reload = function () { collect(); syncSearchUi(); apply(); };
+    directory.reload();
+  }
+
+  /* ---------------- Table rows: secondary columns collapse into an accordion on small screens ---------------- */
+  function closeDetailFor(row) {
+    var next = row.nextElementSibling;
+    if (next && next.classList.contains('row-detail')) next.remove();
+    row.classList.remove('is-open');
+    var btn = $('.row-toggle', row);
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  function initRowToggles() {
+    document.addEventListener('click', function (e) {
+      var btn = closest(e.target, '.row-toggle');
+      if (!btn) return;
+      var row = closest(btn, 'tr');
+      if (!row) return;
+      var next = row.nextElementSibling;
+      if (next && next.classList.contains('row-detail')) { closeDetailFor(row); return; }
+
+      var d = row.dataset;
+      var detail = make('tr', 'row-detail');
+      var cell = make('td');
+      cell.colSpan = row.children.length;
+      var list = make('dl', 'row-detail-list');
+      function add(label, value) {
+        if (!value || value === '—') return;
+        var box = make('div', 'row-detail-item');
+        box.appendChild(make('dt', null, label));
+        box.appendChild(make('dd', null, value));
+        list.appendChild(box);
+      }
+      add('بخش', d.department);
+      add('نام مسئول', d.person);
+      add('محل', d.location);
+      add('وضعیت داخلی', d.active === '1' ? 'فعال' : (d.active === '0' ? 'غیرفعال' : ''));
+      add('توضیحات', d.notes);
+      if (!list.children.length) add('جزئیات', 'اطلاعات بیشتری ثبت نشده است.');
+      cell.appendChild(list);
+      detail.appendChild(cell);
+      row.parentNode.insertBefore(detail, row.nextSibling);
+      row.classList.add('is-open');
+      btn.setAttribute('aria-expanded', 'true');
+    });
+  }
+
+  /* ---------------- Floating tooltip for status badges ---------------- */
+  function initTooltips() {
+    var tip = make('div', 'hp-tip');
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    document.body.appendChild(tip);
+    var current = null;
+
+    function place(target) {
+      var r = target.getBoundingClientRect();
+      tip.style.left = '0px';
+      tip.style.top = '0px';
+      var tw = tip.offsetWidth, th = tip.offsetHeight;
+      var vw = document.documentElement.clientWidth;
+      var left = Math.min(Math.max(8, r.left + r.width / 2 - tw / 2), Math.max(8, vw - tw - 8));
+      var top = r.top - th - 8;
+      if (top < 8) top = r.bottom + 8;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    function show(target) {
+      var text = target.getAttribute('data-tip');
+      if (!text) return;
+      current = target;
+      tip.textContent = text;
+      tip.hidden = false;
+      place(target);
+    }
+    function hide() { current = null; tip.hidden = true; }
+
+    document.addEventListener('mouseover', function (e) {
+      var t = closest(e.target, '[data-tip]');
+      if (t && t !== current) show(t);
+    });
+    document.addEventListener('mouseout', function (e) {
+      var t = closest(e.target, '[data-tip]');
+      if (t && !(e.relatedTarget && t.contains(e.relatedTarget))) hide();
+    });
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+    directory.refreshTip = function (target) { if (current === target) show(target); };
   }
 
   /* ---------------- Live update polling (lightweight, no WebSocket) ---------------- */
@@ -126,26 +528,22 @@
     var initialVersion = body.dataset.version;
     if (!versionUrl || initialVersion === undefined) return;
 
-    var toast = document.getElementById('updateToast');
-    var btn = document.getElementById('updateToastBtn');
-    var closeBtn = document.getElementById('updateToastClose');
-    if (!toast) return;
+    var toastEl = $('#updateToast');
+    var btn = $('#updateToastBtn');
+    var closeBtn = $('#updateToastClose');
+    if (!toastEl) return;
 
     var dismissed = false;
     closeBtn.addEventListener('click', function () {
       dismissed = true;
-      toast.hidden = true;
+      toastEl.hidden = true;
     });
-    btn.addEventListener('click', function () {
-      window.location.reload();
-    });
+    btn.addEventListener('click', function () { window.location.reload(); });
 
     setInterval(function () {
-      if (dismissed) return;
+      if (dismissed || document.hidden) return;
       fetch(versionUrl).then(function (res) { return res.json(); }).then(function (data) {
-        if (String(data.version) !== String(initialVersion)) {
-          toast.hidden = false;
-        }
+        if (String(data.version) !== String(initialVersion)) toastEl.hidden = false;
       }).catch(function () {});
     }, 20000);
   }
@@ -154,33 +552,59 @@
   function initPhoneStatusPolling() {
     var url = document.body.dataset.statusUrl;
     if (!url) return;
-    if (!document.getElementById('cardsView') && !document.querySelector('tr[data-ext]') && !document.querySelector('.ext-tile')) return;
-    var interval = Math.max(15, parseInt(document.body.dataset.statusInterval, 10) || 30) * 1000;
-    var STATES = ['online', 'offline', 'unknown'];
+    var liveBar = $('#liveBar');
+    var liveText = $('#liveText');
+    var refreshBtn = $('#liveRefresh');
+    if (!$('#cardsView') && !$('tr[data-ext]') && !$('.ext-tile') && !liveBar) return;
 
-    function paint(pill, info) {
-      var state = STATES.indexOf(info.status) !== -1 ? info.status : 'unknown';
-      pill.className = 'phone-pill ' + state + (info.slow ? ' slow' : '');
-      pill.textContent = info.label || '';
+    // between 20 and 30 seconds, whatever the PBX sync interval is
+    var configured = parseInt(document.body.dataset.statusInterval, 10) || 30;
+    var interval = Math.min(30, Math.max(20, configured)) * 1000;
+    var STATES = ['online', 'offline', 'unknown'];
+    var failures = 0;
+    var inFlight = false;
+
+    function setLive(mode, text) {
+      if (!liveBar) return;
+      liveBar.setAttribute('data-state', mode);
+      if (liveText) liveText.textContent = text;
     }
 
-    function ensurePill(parent) {
-      var pill = parent.querySelector('[data-phone-pill]');
-      if (!pill) {
-        pill = document.createElement('span');
-        pill.setAttribute('data-phone-pill', '');
-        parent.textContent = '';
-        parent.appendChild(pill);
+    function tipFor(info, data) {
+      var lines = [info.label || ''];
+      var stamp = fmtTime(info.last_sync || data.last_sync);
+      if (stamp) lines.push('آخرین بررسی: ' + stamp);
+      if (typeof info.latency_ms === 'number' && info.status === 'online') lines.push('تأخیر: ' + info.latency_ms + ' ms');
+      return lines.join('\n');
+    }
+
+    function paint(pill, info, data) {
+      var state = STATES.indexOf(info.status) !== -1 ? info.status : 'unknown';
+      var className = 'phone-pill ' + state + (info.slow ? ' slow' : '');
+      var text = info.label || '';
+      var tip = tipFor(info, data);
+      if (pill.className !== className) pill.className = className;
+      if (pill.textContent !== text) pill.textContent = text;
+      if (pill.getAttribute('data-tip') !== tip) {
+        pill.setAttribute('data-tip', tip);
+        if (directory.refreshTip) directory.refreshTip(pill);
       }
+      return state;
+    }
+
+    function newPill() {
+      var pill = document.createElement('span');
+      pill.setAttribute('data-phone-pill', '');
       return pill;
     }
 
-    function apply(statuses) {
-      var cards = document.querySelectorAll('.extension-card');
-      var rows = document.querySelectorAll('tr[data-ext]');
-      document.querySelectorAll('.ext-tile').forEach(function (tile) {
+    function apply(data) {
+      var statuses = data.statuses || {};
+      var cards = $$('.extension-card');
+      var rows = $$('tr[data-ext]');
+      $$('.ext-tile').forEach(function (tile) {
         var info = statuses[tile.dataset.ext];
-        STATES.forEach(function (s) { tile.classList.remove(s); });
+        STATES.forEach(function (st) { tile.classList.remove(st); });
         tile.classList.remove('slow');
         if (!info) return;
         tile.classList.add(STATES.indexOf(info.status) !== -1 ? info.status : 'unknown');
@@ -188,60 +612,93 @@
       });
       cards.forEach(function (card) {
         var info = statuses[card.dataset.ext];
-        var pill = card.querySelector('[data-phone-pill]');
+        var pill = $('[data-phone-pill]', card);
         if (!info) {
           if (pill) pill.remove();
           card.dataset.phonestatus = '';
+          card.dataset.phoneState = '';
+          card.dataset.phonecheck = '';
           return;
         }
         if (!pill) {
-          var col = card.querySelector('.card-status-col');
+          var col = $('.card-status-col', card);
           if (!col) return;
-          pill = document.createElement('span');
-          pill.setAttribute('data-phone-pill', '');
+          pill = newPill();
           col.appendChild(pill);
         }
-        paint(pill, info);
+        card.dataset.phoneState = paint(pill, info, data);
         card.dataset.phonestatus = info.label || '';
+        card.dataset.phonecheck = fmtTime(info.last_sync || data.last_sync);
       });
       rows.forEach(function (row) {
-        var cell = row.querySelector('[data-phone-cell]');
-        if (!cell) return;  // the table has no phone column until the page is reloaded after the first sync
+        var cell = $('[data-phone-cell]', row);
         var info = statuses[row.dataset.ext];
-        if (!info) { cell.textContent = '—'; return; }
-        paint(ensurePill(cell), info);
+        if (!cell) return;  // the table has no phone column until the page is reloaded after the first sync
+        if (!info) {
+          cell.textContent = '—';
+          row.dataset.phoneState = '';
+          row.dataset.phonestatus = '';
+          return;
+        }
+        var pill = $('[data-phone-pill]', cell);
+        if (!pill) {
+          pill = newPill();
+          cell.textContent = '';
+          cell.appendChild(pill);
+        }
+        row.dataset.phoneState = paint(pill, info, data);
+        row.dataset.phonestatus = info.label || '';
       });
+      if (directory.apply) directory.apply();
     }
 
-    function poll() {
-      if (document.hidden) return;
+    function poll(manual) {
+      if (document.hidden && !manual) return;
+      if (inFlight) return;
+      inFlight = true;
+      if (refreshBtn) refreshBtn.classList.add('spinning');
       fetch(url, { credentials: 'same-origin', cache: 'no-store' })
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (data) { if (data && data.statuses) apply(data.statuses); })
-        .catch(function () {});  // keep the badges that are showing; try again next round
+        .then(function (res) { if (!res.ok) throw new Error('http ' + res.status); return res.json(); })
+        .then(function (data) {
+          failures = 0;
+          if (data && data.statuses) apply(data);
+          var stamp = fmtTime(data && data.last_sync);
+          setLive('ok', 'بروزرسانی زنده' + (stamp ? ' · آخرین همگام‌سازی با PBX: ' + stamp : ''));
+        })
+        .catch(function () {
+          failures++;
+          // keep the badges that are showing; only tell the user after a second miss
+          if (failures >= 2) setLive('error', 'ارتباط با سرور برقرار نیست — نمایش آخرین وضعیت شناخته‌شده');
+        })
+        .then(function () {
+          inFlight = false;
+          if (refreshBtn) refreshBtn.classList.remove('spinning');
+        });
     }
 
+    if (refreshBtn) refreshBtn.addEventListener('click', function () { poll(true); });
     setInterval(poll, interval);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+    poll();
   }
 
   /* ---------------- Extension detail modal ---------------- */
   function initDetailModal() {
-    var modalEl = document.getElementById('extensionDetailModal');
+    var modalEl = $('#extensionDetailModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
     var modal = new bootstrap.Modal(modalEl);
-    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus'];
+    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus', 'phonecheck'];
 
     document.addEventListener('click', function (e) {
-      var card = e.target.closest ? e.target.closest('.extension-card') : null;
+      var card = closest(e.target, '.extension-card');
       if (!card) return;
-      if (e.target.closest('.fav-btn') || e.target.closest('.copy-btn')) return;
+      if (closest(e.target, '.fav-btn') || closest(e.target, '.copy-btn')) return;
       fields.forEach(function (key) {
-        var el = modalEl.querySelector('[data-field="' + key + '"]');
-        if (el) el.textContent = card.dataset[key] || '\u2014';
+        var node = $('[data-field="' + key + '"]', modalEl);
+        if (node) node.textContent = card.dataset[key] || '—';
       });
-      var presenceEl = modalEl.querySelector('[data-field="presence"]');
-      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? '\ud83d\udfe2 \u062d\u0627\u0636\u0631' : '\ud83d\udd34 \u062e\u0627\u0631\u062c \u0627\u0632 \u0634\u06cc\u0641\u062a';
+      var presenceEl = $('[data-field="presence"]', modalEl);
+      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? 'حاضر' : 'خارج از شیفت';
       modal.show();
     });
   }
@@ -326,7 +783,10 @@
       loading: '#cardsView',
       marker: '#tableView',
       swaps: ['#cardsView', '#tableView', '.results-bar > div:first-child', '#paginationHolder'],
-      after: function () { paintFavorites(); applyFavoriteFilter(); }
+      after: function () {
+        paintFavorites();
+        if (directory.reload) directory.reload();   // chips / favourites / counts for the new rows
+      }
     });
   }
 
@@ -368,14 +828,19 @@
 
     // one shared form deletes a tile's extension, so 500+ tiles do not each carry a form
     document.addEventListener('click', function (e) {
-      var btn = e.target.closest ? e.target.closest('.ext-tile-del') : null;
+      var btn = closest(e.target, '.ext-tile-del');
       if (!btn) return;
       e.preventDefault();
       var form = document.getElementById('tileDeleteForm');
       if (!form || !btn.dataset.deleteUrl) return;
-      if (!window.confirm('\u0627\u06cc\u0646 \u062f\u0627\u062e\u0644\u06cc \u0628\u0647 \u0633\u0637\u0644 \u0628\u0627\u0632\u06cc\u0627\u0641\u062a \u0645\u0646\u062a\u0642\u0644 \u0634\u0648\u062f\u061f')) return;
-      form.action = btn.dataset.deleteUrl;
-      form.submit();
+      openConfirm({
+        message: 'این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید.',
+        title: 'انتقال به سطل بازیافت',
+        okLabel: 'بله، منتقل کن'
+      }, function () {
+        form.action = btn.dataset.deleteUrl;
+        form.submit();
+      });
     });
 
     var form = document.querySelector('form.admin-search-bar');
@@ -409,15 +874,13 @@
 
   /* ---------------- Admin: bulk select ---------------- */
   function initBulkSelect() {
-    var selectAll = document.getElementById('selectAllRows');
-    var countEl = document.getElementById('bulkSelectedCount');
-    var bulkForm = document.getElementById('bulkForm');
+    var selectAll = $('#selectAllRows');
+    var countEl = $('#bulkSelectedCount');
+    var bulkForm = $('#bulkForm');
     if (!selectAll || !bulkForm) return;
-    var actionButtons = bulkForm.querySelectorAll('button[type="submit"]');
+    var actionButtons = $$('button[type="submit"]', bulkForm);
 
-    function rowCheckboxes() {
-      return Array.prototype.slice.call(document.querySelectorAll('.row-select:not(:disabled)'));
-    }
+    function rowCheckboxes() { return $$('.row-select:not(:disabled)'); }
 
     function refresh() {
       var checked = rowCheckboxes().filter(function (cb) { return cb.checked; });
@@ -441,20 +904,19 @@
   }
 
   /* ---------------- Card/table view toggle ---------------- */
-  var VIEW_KEY = 'hp_view_mode';
   function applyViewMode(mode) {
-    var cardsView = document.getElementById('cardsView');
-    var tableView = document.getElementById('tableView');
+    var cardsView = $('#cardsView');
+    var tableView = $('#tableView');
     if (!cardsView || !tableView) return;
     cardsView.style.display = mode === 'table' ? 'none' : '';
     tableView.style.display = mode === 'table' ? '' : 'none';
-    document.querySelectorAll('.view-toggle-btn').forEach(function (btn) {
+    $$('.view-toggle-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.view === mode);
     });
   }
 
   function initViewToggle() {
-    var buttons = document.querySelectorAll('.view-toggle-btn');
+    var buttons = $$('.view-toggle-btn');
     if (!buttons.length) return;
     var current = 'cards';
     try { current = localStorage.getItem(VIEW_KEY) || 'cards'; } catch (e) {}
@@ -468,10 +930,17 @@
     });
   }
 
+  window.HotelUI = { toast: toast, confirm: openConfirm };
+
   document.addEventListener('DOMContentLoaded', function () {
     initTheme();
+    initConfirm();
+    initLoadingButtons();
+    initFlashToasts();
+    initTooltips();
     initFavorites();
-    initFavoriteFilterToggle();
+    initDirectoryFilters();
+    initRowToggles();
     initCopyButtons();
     initPrintButtons();
     initUpdatePolling();

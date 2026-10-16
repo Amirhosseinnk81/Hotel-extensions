@@ -1,4 +1,10 @@
 {% extends 'base.html' %}
+{% macro phone_badge(e) -%}
+{%- set ps = phone_status(e) -%}
+{%- if ps -%}
+<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill data-tip="{{ phone_label(e) }}{% if e.status_updated_at %}&#10;آخرین بررسی: {{ e.status_updated_at | local_dt('%H:%M') }}{% endif %}{% if current_user.is_authenticated and ps == 'online' and e.rtt_ms is not none %}&#10;تأخیر: {{ e.rtt_ms }} ms{% endif %}">{{ phone_label(e) }}</span>
+{%- endif -%}
+{%- endmacro %}
 {% block content %}
 
 <section class="hero mb-4 no-print">
@@ -7,20 +13,22 @@
     <h1>داخلی مورد نظرتان را سریع پیدا کنید</h1>
     <p class="hero-sub">لیست به‌روز واحدها، بخش‌ها و همکاران هتل</p>
   </div>
-  <div class="hero-icon">☎</div>
+  <div class="hero-icon" aria-hidden="true">☎</div>
 </section>
 
 <div class="sticky-search no-print">
   <form class="search-card mb-2" method="get">
     <div class="row g-2 align-items-center">
       <div class="col-lg-3">
-        <div class="input-icon">
-          <span class="input-icon-glyph">⌕</span>
-          <input name="q" value="{{ query }}" autocomplete="off" enterkeyhint="search" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…">
+        <div class="input-icon{% if query %} has-value{% endif %}">
+          <span class="input-icon-glyph" aria-hidden="true">⌕</span>
+          <input id="instantSearch" type="search" name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…" autocomplete="off" enterkeyhint="search" aria-label="جست‌وجوی داخلی">
+          <button type="button" class="input-clear" id="searchClear" aria-label="پاک کردن جست‌وجو" {% if not query %}hidden{% endif %}>✕</button>
+          <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="department" class="form-select form-select-lg">
+        <select name="department" class="form-select form-select-lg" aria-label="بخش">
           <option value="">همه بخش‌ها</option>
           {% for d in departments %}
             <option value="{{ d.id }}" {% if d.id == selected_department %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
@@ -28,14 +36,14 @@
         </select>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="status" class="form-select form-select-lg">
+        <select name="status" class="form-select form-select-lg" aria-label="فعال یا غیرفعال">
           <option value="">همه وضعیت‌ها</option>
-          <option value="active" {% if status == 'active' %}selected{% endif %}>🟢 فعال</option>
-          <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>🔴 غیرفعال</option>
+          <option value="active" {% if status == 'active' %}selected{% endif %}>فعال</option>
+          <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>غیرفعال</option>
         </select>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="sort" class="form-select form-select-lg">
+        <select name="sort" class="form-select form-select-lg" aria-label="مرتب‌سازی">
           <optgroup label="شماره داخلی">
             <option value="extension:asc" {% if sort_value=='extension:asc' %}selected{% endif %}>صعودی</option>
             <option value="extension:desc" {% if sort_value=='extension:desc' %}selected{% endif %}>نزولی</option>
@@ -63,7 +71,7 @@
         </select>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="per_page" class="form-select form-select-lg">
+        <select name="per_page" class="form-select form-select-lg" aria-label="تعداد در هر صفحه">
           <option value="20" {% if per_page == 20 %}selected{% endif %}>۲۰ مورد</option>
           <option value="50" {% if per_page == 50 %}selected{% endif %}>۵۰ مورد</option>
           <option value="100" {% if per_page == 100 %}selected{% endif %}>۱۰۰ مورد</option>
@@ -103,17 +111,35 @@
   </form>
 </div>
 
+{% if pbx_config().enabled or show_phone_status %}
+<div class="status-toolbar no-print mb-3">
+  <div class="filter-chips" role="group" aria-label="فیلتر وضعیت خطوط">
+    <button type="button" class="filter-chip active" data-filter="all" aria-pressed="true">همه <span class="chip-count" data-chip-count></span></button>
+    <button type="button" class="filter-chip" data-filter="online" aria-pressed="false"><span class="chip-dot chip-dot-ok" aria-hidden="true"></span>فقط آنلاین <span class="chip-count" data-chip-count></span></button>
+    <button type="button" class="filter-chip" data-filter="offline" aria-pressed="false"><span class="chip-dot chip-dot-bad" aria-hidden="true"></span>فقط آفلاین / قطع <span class="chip-count" data-chip-count></span></button>
+  </div>
+  {% if pbx_config().enabled %}
+  <div class="live-bar" id="liveBar" data-state="connecting" aria-live="polite">
+    <span class="live-dot" aria-hidden="true"></span>
+    <span id="liveText">در حال اتصال…</span>
+    <button type="button" class="live-refresh" id="liveRefresh" title="بروزرسانی همین حالا" aria-label="بروزرسانی همین حالا"><span aria-hidden="true">⟳</span></button>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="results-bar mb-3 no-print">
   <div aria-live="polite">
     <h5 class="mb-0">{{ total_count }} داخلی یافت شد</h5>
     {% if per_page != 'all' and total_pages > 1 %}
       <span class="results-page-info">صفحه {{ page }} از {{ total_pages }}</span>
     {% endif %}
+    <div class="results-page-info filter-info" id="filterInfo" hidden></div>
   </div>
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <div class="view-toggle no-print" role="group" aria-label="نمای نمایش">
-      <button type="button" class="view-toggle-btn" data-view="cards" title="نمای کارت">▦</button>
-      <button type="button" class="view-toggle-btn" data-view="table" title="نمای جدول فشرده">☰</button>
+      <button type="button" class="view-toggle-btn" data-view="cards" title="نمای کارت" aria-label="نمای کارت">▦</button>
+      <button type="button" class="view-toggle-btn" data-view="table" title="نمای جدول فشرده" aria-label="نمای جدول فشرده">☰</button>
     </div>
     <div class="export-bar">
       <a class="btn-export" href="{{ url_for('public_export_pdf') }}"><span class="btn-export-icon">📄</span><span>PDF</span></a>
@@ -123,6 +149,8 @@
     </div>
   </div>
 </div>
+
+<div class="empty-state mb-3 no-print" id="filterEmpty" hidden>موردی مطابق جست‌وجو یا فیلتر انتخابی در این صفحه پیدا نشد.</div>
 
 <div class="row g-3" id="cardsView">
   {% for e in entries %}
@@ -141,6 +169,8 @@
         data-updated="{{ e.updated_at | local_dt }}"
         data-present="{{ '1' if e.is_present else '0' }}"
         data-phonestatus="{{ phone_label(e) }}"
+        data-phone-state="{{ phone_status(e) or '' }}"
+        data-phonecheck="{{ (e.status_updated_at | local_dt('%H:%M')) if phone_status(e) and e.status_updated_at else '' }}"
         role="button" tabindex="0">
         <div class="d-flex justify-content-between align-items-start card-top-row">
           <div class="card-main-info">
@@ -149,15 +179,15 @@
             {% if e.person_name %}<p class="person-name">{{ e.person_name }}</p>{% endif %}
           </div>
           <div class="card-status-col">
-            <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="افزودن به علاقه‌مندی‌ها">☆</button>
-            <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span>
-            {% set ps = phone_status(e) %}{% if ps %}<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill>{{ phone_label(e) }}</span>{% endif %}
-            <!-- <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ '🟢 حاضر' if e.is_present else '🔴 خارج از شیفت' }}</span> -->
+            <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="افزودن به علاقه‌مندی‌ها" aria-label="افزودن به علاقه‌مندی‌ها">☆</button>
+            <!-- <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ 'فعال' if e.is_active else 'غیرفعال' }}</span> -->
+            {{ phone_badge(e) }}
+            <!-- <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ 'حاضر' if e.is_present else 'خارج از شیفت' }}</span> -->
           </div>
         </div>
         <div class="extension-number-row">
           <div class="extension-number">{{ e.extension }}</div>
-          <button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره">📋</button>
+          <button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره" aria-label="کپی شماره">📋</button>
         </div>
         {% if e.location %}<small class="location-line">⌖ {{ e.location }}</small>{% endif %}
         {% if e.department and e.department.working_hours %}<small class="hours-line">🕒 {{ e.department.working_hours }}</small>{% endif %}
@@ -172,22 +202,41 @@
 <div class="table-responsive no-print" id="tableView" style="display:none">
   <table class="table table-hover align-middle compact-table">
     <thead>
-      <tr><th>داخلی</th><th>عنوان</th><th>نام مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th>{% if show_phone_status %}<th>تلفن</th>{% endif %}<th></th></tr>
+      <tr>
+        <th>داخلی</th>
+        <th>عنوان</th>
+        <th class="col-sec">نام مسئول</th>
+        <th class="col-sec">بخش</th>
+        <th class="col-loc">محل</th>
+        <th class="col-sec">وضعیت</th>
+        {% if show_phone_status %}<th>تلفن</th>{% endif %}
+        <th class="col-copy"><span class="visually-hidden">کپی</span></th>
+        <th class="col-toggle"><span class="visually-hidden">جزئیات</span></th>
+      </tr>
     </thead>
     <tbody>
       {% for e in entries %}
-      <tr data-ext="{{ e.extension }}">
+      <tr data-ext="{{ e.extension }}"
+        data-title="{{ e.title }}"
+        data-person="{{ e.person_name or '—' }}"
+        data-department="{{ e.department.name if e.department else '—' }}"
+        data-location="{{ e.location or '—' }}"
+        data-notes="{{ e.notes or '—' }}"
+        data-active="{{ '1' if e.is_active else '0' }}"
+        data-phonestatus="{{ phone_label(e) }}"
+        data-phone-state="{{ phone_status(e) or '' }}">
         <td class="fw-bold text-primary" dir="ltr">{{ e.extension }}</td>
-        <td>{{ e.title }}</td>
-        <td>{{ e.person_name or '—' }}</td>
-        <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
-        <td>{{ e.location or '—' }}</td>
-        <td><span class="status-pill {{ '' if e.is_active else 'off' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span></td>
-        {% if show_phone_status %}{% set ps = phone_status(e) %}<td data-phone-cell>{% if ps %}<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill>{{ phone_label(e) }}</span>{% else %}—{% endif %}</td>{% endif %}
-        <td><button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره">📋</button></td>
+        <td class="cell-title">{{ e.title }}</td>
+        <td class="col-sec">{{ e.person_name or '—' }}</td>
+        <td class="col-sec">{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
+        <td class="col-loc">{{ e.location or '—' }}</td>
+        <td class="col-sec"><span class="status-pill {{ '' if e.is_active else 'off' }}">{{ 'فعال' if e.is_active else 'غیرفعال' }}</span></td>
+        {% if show_phone_status %}<td data-phone-cell>{% set badge = phone_badge(e) %}{% if badge|trim %}{{ badge }}{% else %}—{% endif %}</td>{% endif %}
+        <td class="col-copy"><button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="کپی شماره" aria-label="کپی شماره">📋</button></td>
+        <td class="col-toggle"><button type="button" class="row-toggle" aria-expanded="false" aria-label="نمایش جزئیات بیشتر"></button></td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ 8 if show_phone_status else 7 }}" class="text-center py-4 text-muted">نتیجه‌ای پیدا نشد.</td></tr>
+      <tr><td colspan="{{ 9 if show_phone_status else 8 }}" class="text-center py-4 text-muted">نتیجه‌ای پیدا نشد.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -223,7 +272,7 @@
     <div class="modal-content detail-modal">
       <div class="modal-header">
         <h5 class="modal-title">جزئیات داخلی <span data-field="extension"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="بستن"></button>
       </div>
       <div class="modal-body">
         <div class="detail-row"><span>عنوان</span><strong data-field="title"></strong></div>
@@ -236,7 +285,10 @@
         {% endif %}
         <div class="detail-row"><span>ساعات کاری بخش</span><strong data-field="hours"></strong></div>
         <div class="detail-row"><span>وضعیت حضور</span><strong data-field="presence"></strong></div>
-        {% if show_phone_status %}<div class="detail-row"><span>وضعیت تلفن</span><strong data-field="phonestatus"></strong></div>{% endif %}
+        {% if show_phone_status %}
+        <div class="detail-row"><span>وضعیت تلفن</span><strong data-field="phonestatus"></strong></div>
+        <div class="detail-row"><span>آخرین بررسی</span><strong data-field="phonecheck"></strong></div>
+        {% endif %}
         <div class="detail-row"><span>توضیحات</span><strong data-field="notes"></strong></div>
         <div class="detail-row"><span>تاریخ ایجاد</span><strong data-field="created"></strong></div>
         <div class="detail-row"><span>تاریخ ویرایش</span><strong data-field="updated"></strong></div>

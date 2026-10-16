@@ -16,9 +16,9 @@
         <div>آخرین همگام‌سازی موفق: {% if state.last_success %}{{ state.last_success | local_dt }}{% if state.last_duration %} ({{ '%.1f'|format(state.last_duration) }} ثانیه){% endif %}{% else %}هنوز انجام نشده{% endif %}</div>
         {% if state.last_error %}<div class="text-danger mt-1">آخرین خطا: <span dir="ltr">{{ state.last_error }}</span></div>{% endif %}
       </div>
-      <form method="post" action="{{ url_for('pbx_sync_now') }}">
+      <form method="post" action="{{ url_for('pbx_sync_now') }}" data-loading>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-primary btn-sm">همگام‌سازی الان</button>
+        <button type="submit" class="btn btn-primary btn-sm" data-loading-text="در حال دریافت...">همگام‌سازی با PBX</button>
       </form>
     </div>
     {% if state.summary %}
