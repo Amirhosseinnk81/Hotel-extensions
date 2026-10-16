@@ -3,6 +3,8 @@
 
   var THEME_KEY = 'hp_theme';
   var FAV_KEY = 'hp_favorites';
+  var ADMIN_VIEW_KEY = 'hp_admin_view';
+  var bulkRefresh = null;  // set by initBulkSelect; the admin list calls it after its rows change
 
   /* ---------------- Theme ---------------- */
   function applyTheme(theme) {
@@ -32,29 +34,27 @@
     try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (e) {}
   }
 
-  function initFavorites() {
+  function paintFavorites() {
     var favs = getFavorites();
     document.querySelectorAll('.fav-btn').forEach(function (btn) {
+      var on = favs.indexOf(btn.dataset.ext) !== -1;
+      btn.classList.toggle('active', on);
+      btn.textContent = on ? '\u2605' : '\u2606';
+    });
+  }
+
+  function initFavorites() {
+    paintFavorites();
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.fav-btn') : null;
+      if (!btn) return;
       var ext = btn.dataset.ext;
-      if (favs.indexOf(ext) !== -1) {
-        btn.classList.add('active');
-        btn.textContent = '★';
-      }
-      btn.addEventListener('click', function () {
-        var list = getFavorites();
-        var idx = list.indexOf(ext);
-        if (idx === -1) {
-          list.push(ext);
-          btn.classList.add('active');
-          btn.textContent = '★';
-        } else {
-          list.splice(idx, 1);
-          btn.classList.remove('active');
-          btn.textContent = '☆';
-        }
-        saveFavorites(list);
-        applyFavoriteFilter();
-      });
+      var list = getFavorites();
+      var idx = list.indexOf(ext);
+      if (idx === -1) list.push(ext); else list.splice(idx, 1);
+      saveFavorites(list);
+      paintFavorites();
+      applyFavoriteFilter();
     });
   }
 
@@ -81,31 +81,31 @@
 
   /* ---------------- Copy to clipboard ---------------- */
   function initCopyButtons() {
-    document.querySelectorAll('.copy-btn').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.preventDefault();
-        var ext = btn.dataset.ext;
-        var done = function () {
-          var original = btn.textContent;
-          btn.textContent = '✓';
-          btn.classList.add('copied');
-          setTimeout(function () {
-            btn.textContent = original;
-            btn.classList.remove('copied');
-          }, 1200);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(ext).then(done).catch(done);
-        } else {
-          var temp = document.createElement('textarea');
-          temp.value = ext;
-          document.body.appendChild(temp);
-          temp.select();
-          try { document.execCommand('copy'); } catch (e) {}
-          document.body.removeChild(temp);
-          done();
-        }
-      });
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.copy-btn') : null;
+      if (!btn) return;
+      e.preventDefault();
+      var ext = btn.dataset.ext;
+      var done = function () {
+        var original = btn.textContent;
+        btn.textContent = '\u2713';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = original;
+          btn.classList.remove('copied');
+        }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ext).then(done).catch(done);
+      } else {
+        var temp = document.createElement('textarea');
+        temp.value = ext;
+        document.body.appendChild(temp);
+        temp.select();
+        try { document.execCommand('copy'); } catch (err) {}
+        document.body.removeChild(temp);
+        done();
+      }
     });
   }
 
@@ -154,9 +154,7 @@
   function initPhoneStatusPolling() {
     var url = document.body.dataset.statusUrl;
     if (!url) return;
-    var cards = document.querySelectorAll('.extension-card');
-    var rows = document.querySelectorAll('tr[data-ext]');
-    if (!cards.length && !rows.length) return;
+    if (!document.getElementById('cardsView') && !document.querySelector('tr[data-ext]') && !document.querySelector('.ext-tile')) return;
     var interval = Math.max(15, parseInt(document.body.dataset.statusInterval, 10) || 30) * 1000;
     var STATES = ['online', 'offline', 'unknown'];
 
@@ -178,6 +176,16 @@
     }
 
     function apply(statuses) {
+      var cards = document.querySelectorAll('.extension-card');
+      var rows = document.querySelectorAll('tr[data-ext]');
+      document.querySelectorAll('.ext-tile').forEach(function (tile) {
+        var info = statuses[tile.dataset.ext];
+        STATES.forEach(function (s) { tile.classList.remove(s); });
+        tile.classList.remove('slow');
+        if (!info) return;
+        tile.classList.add(STATES.indexOf(info.status) !== -1 ? info.status : 'unknown');
+        if (info.slow) tile.classList.add('slow');
+      });
       cards.forEach(function (card) {
         var info = statuses[card.dataset.ext];
         var pill = card.querySelector('[data-phone-pill]');
@@ -224,18 +232,179 @@
     var modal = new bootstrap.Modal(modalEl);
     var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus'];
 
-    document.querySelectorAll('.extension-card').forEach(function (card) {
-      card.addEventListener('click', function (e) {
-        if (e.target.closest('.fav-btn') || e.target.closest('.copy-btn')) return;
-        fields.forEach(function (key) {
-          var el = modalEl.querySelector('[data-field="' + key + '"]');
-          if (el) el.textContent = card.dataset[key] || '—';
+    document.addEventListener('click', function (e) {
+      var card = e.target.closest ? e.target.closest('.extension-card') : null;
+      if (!card) return;
+      if (e.target.closest('.fav-btn') || e.target.closest('.copy-btn')) return;
+      fields.forEach(function (key) {
+        var el = modalEl.querySelector('[data-field="' + key + '"]');
+        if (el) el.textContent = card.dataset[key] || '\u2014';
+      });
+      var presenceEl = modalEl.querySelector('[data-field="presence"]');
+      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? '\ud83d\udfe2 \u062d\u0627\u0636\u0631' : '\ud83d\udd34 \u062e\u0627\u0631\u062c \u0627\u0632 \u0634\u06cc\u0641\u062a';
+      modal.show();
+    });
+  }
+
+  /* ---------------- Live search: results update while typing, no button needed ---------------- */
+  // opts: form (selector), loading (selector of the element dimmed meanwhile), marker (selector that must
+  // exist in the answer, else it is not the list page), swaps (selectors whose content is replaced), after().
+  function setupLiveSearch(opts) {
+    var form = document.querySelector(opts.form);
+    var host = document.querySelector(opts.loading);
+    if (!form || !host || !window.fetch || !window.DOMParser || !window.URLSearchParams) return null;
+    var DELAY = 300;  // ms of silence after the last keystroke before searching
+    var timer = null, controller = null, seq = 0;
+
+    function buildUrl() {
+      var params = new URLSearchParams();
+      new FormData(form).forEach(function (value, key) {
+        value = String(value).trim();
+        if (value !== '') params.append(key, value);
+      });
+      var qs = params.toString();
+      return window.location.pathname + (qs ? '?' + qs : '');
+    }
+
+    function copyInner(doc, selector) {
+      var target = document.querySelector(selector);
+      var source = doc.querySelector(selector);
+      if (target && source) target.innerHTML = source.innerHTML;
+    }
+
+    function search() {
+      var url = buildUrl();
+      var mine = ++seq;
+      if (controller) controller.abort();
+      controller = window.AbortController ? new AbortController() : null;
+      host.classList.add('is-loading');
+      fetch(url, { credentials: 'same-origin', signal: controller ? controller.signal : undefined })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(function (html) {
+          if (mine !== seq) return;  // a newer search is already on its way
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          if (!doc.querySelector(opts.marker)) {
+            window.location.href = url;  // not the list page (login, error page): do a normal visit
+            return;
+          }
+          opts.swaps.forEach(function (selector) { copyInner(doc, selector); });
+          try { history.replaceState(null, '', url); } catch (e) {}
+          if (opts.after) opts.after();
+          host.classList.remove('is-loading');
+        })
+        .catch(function (err) {
+          if (err && err.name === 'AbortError') return;
+          if (mine === seq) host.classList.remove('is-loading');  // keep the old results on a failure
         });
-        var presenceEl = modalEl.querySelector('[data-field="presence"]');
-        if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? '🟢 حاضر' : '🔴 خارج از شیفت';
-        modal.show();
+    }
+
+    function schedule(immediate) {
+      clearTimeout(timer);
+      timer = setTimeout(search, immediate ? 0 : DELAY);
+    }
+
+    form.addEventListener('input', function (e) {
+      if (e.target.tagName === 'INPUT' && e.target.name && !e.isComposing) schedule(false);
+    });
+    form.addEventListener('compositionend', function () { schedule(false); });
+    form.addEventListener('change', function (e) {
+      if (e.target.tagName === 'SELECT') schedule(true);
+    });
+    form.addEventListener('submit', function (e) {  // Enter or the button: same search, no page reload
+      e.preventDefault();
+      schedule(true);
+    });
+    return { schedule: schedule };
+  }
+
+  function initLiveSearch() {
+    setupLiveSearch({
+      form: 'form.search-card',
+      loading: '#cardsView',
+      marker: '#tableView',
+      swaps: ['#cardsView', '#tableView', '.results-bar > div:first-child', '#paginationHolder'],
+      after: function () { paintFavorites(); applyFavoriteFilter(); }
+    });
+  }
+
+  /* ---------------- Admin extension list: compact tiles / table, live search ---------------- */
+  function adminViewMode() {
+    var mode = 'tiles';
+    try { mode = localStorage.getItem(ADMIN_VIEW_KEY) || 'tiles'; } catch (e) {}
+    return mode === 'table' ? 'table' : 'tiles';
+  }
+
+  // Both views carry the same rows; only the shown one is submitted (its checkboxes stay enabled).
+  function applyAdminView(mode) {
+    var tiles = document.getElementById('tilesView');
+    var table = document.getElementById('adminTableView');
+    if (!tiles || !table) return;
+    var to = mode === 'table' ? table : tiles;
+    var from = mode === 'table' ? tiles : table;
+    var ticked = {};
+    from.querySelectorAll('.row-select:checked').forEach(function (cb) { ticked[cb.value] = true; });
+    to.querySelectorAll('.row-select').forEach(function (cb) { cb.disabled = false; cb.checked = !!ticked[cb.value] || cb.checked; });
+    from.querySelectorAll('.row-select').forEach(function (cb) { cb.disabled = true; cb.checked = false; });
+    to.style.display = '';
+    from.style.display = 'none';
+    document.querySelectorAll('.admin-view-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.adminView === mode);
+    });
+    if (bulkRefresh) bulkRefresh();
+  }
+
+  function initAdminList() {
+    if (!document.getElementById('adminResults')) return;
+    applyAdminView(adminViewMode());
+    document.querySelectorAll('.admin-view-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        try { localStorage.setItem(ADMIN_VIEW_KEY, btn.dataset.adminView); } catch (e) {}
+        applyAdminView(btn.dataset.adminView);
       });
     });
+
+    // one shared form deletes a tile's extension, so 500+ tiles do not each carry a form
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.ext-tile-del') : null;
+      if (!btn) return;
+      e.preventDefault();
+      var form = document.getElementById('tileDeleteForm');
+      if (!form || !btn.dataset.deleteUrl) return;
+      if (!window.confirm('\u0627\u06cc\u0646 \u062f\u0627\u062e\u0644\u06cc \u0628\u0647 \u0633\u0637\u0644 \u0628\u0627\u0632\u06cc\u0627\u0641\u062a \u0645\u0646\u062a\u0642\u0644 \u0634\u0648\u062f\u061f')) return;
+      form.action = btn.dataset.deleteUrl;
+      form.submit();
+    });
+
+    var form = document.querySelector('form.admin-search-bar');
+    var clearBtn = document.getElementById('adminClear');
+    function updateClear() {
+      if (!form || !clearBtn) return;
+      var q = form.elements.q ? form.elements.q.value.trim() : '';
+      var kind = form.elements.kind ? form.elements.kind.value : '';
+      clearBtn.hidden = !(q || kind);
+    }
+    var live = setupLiveSearch({
+      form: 'form.admin-search-bar',
+      loading: '#adminResults',
+      marker: '#adminResults',
+      swaps: ['#adminResults'],
+      after: function () { applyAdminView(adminViewMode()); updateClear(); }
+    });
+    if (form) {
+      form.addEventListener('input', updateClear);
+      form.addEventListener('change', updateClear);
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        if (form.elements.q) form.elements.q.value = '';
+        if (form.elements.kind) form.elements.kind.value = '';
+        updateClear();
+        if (live) live.schedule(true); else window.location.href = window.location.pathname;
+      });
+    }
   }
 
   /* ---------------- Admin: bulk select ---------------- */
@@ -247,7 +416,7 @@
     var actionButtons = bulkForm.querySelectorAll('button[type="submit"]');
 
     function rowCheckboxes() {
-      return Array.prototype.slice.call(document.querySelectorAll('.row-select'));
+      return Array.prototype.slice.call(document.querySelectorAll('.row-select:not(:disabled)'));
     }
 
     function refresh() {
@@ -267,6 +436,7 @@
       if (e.target.classList && e.target.classList.contains('row-select')) refresh();
     });
 
+    bulkRefresh = refresh;
     refresh();
   }
 
@@ -309,5 +479,7 @@
     initDetailModal();
     initBulkSelect();
     initViewToggle();
+    initLiveSearch();
+    initAdminList();
   });
 })();

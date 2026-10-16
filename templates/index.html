@@ -16,7 +16,7 @@
       <div class="col-lg-3">
         <div class="input-icon">
           <span class="input-icon-glyph">⌕</span>
-          <input name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…">
+          <input name="q" value="{{ query }}" autocomplete="off" enterkeyhint="search" class="form-control form-control-lg" placeholder="نام، واحد، شماره داخلی یا محل…">
         </div>
       </div>
       <div class="col-6 col-lg-2">
@@ -35,7 +35,7 @@
         </select>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="sort" class="form-select form-select-lg" onchange="this.form.submit()">
+        <select name="sort" class="form-select form-select-lg">
           <optgroup label="شماره داخلی">
             <option value="extension:asc" {% if sort_value=='extension:asc' %}selected{% endif %}>صعودی</option>
             <option value="extension:desc" {% if sort_value=='extension:desc' %}selected{% endif %}>نزولی</option>
@@ -63,7 +63,7 @@
         </select>
       </div>
       <div class="col-6 col-lg-2">
-        <select name="per_page" class="form-select form-select-lg" onchange="this.form.submit()">
+        <select name="per_page" class="form-select form-select-lg">
           <option value="20" {% if per_page == 20 %}selected{% endif %}>۲۰ مورد</option>
           <option value="50" {% if per_page == 50 %}selected{% endif %}>۵۰ مورد</option>
           <option value="100" {% if per_page == 100 %}selected{% endif %}>۱۰۰ مورد</option>
@@ -104,7 +104,7 @@
 </div>
 
 <div class="results-bar mb-3 no-print">
-  <div>
+  <div aria-live="polite">
     <h5 class="mb-0">{{ total_count }} داخلی یافت شد</h5>
     {% if per_page != 'all' and total_pages > 1 %}
       <span class="results-page-info">صفحه {{ page }} از {{ total_pages }}</span>
@@ -193,6 +193,7 @@
   </table>
 </div>
 
+<div id="paginationHolder">
 {% if per_page != 'all' and total_pages > 1 %}
   {% set base_args = request.args.to_dict() %}
   <nav class="pagination-bar mt-4 no-print" aria-label="صفحه‌بندی">
@@ -215,6 +216,7 @@
     </ul>
   </nav>
 {% endif %}
+</div>
 
 <div class="modal fade no-print" id="extensionDetailModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">

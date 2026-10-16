@@ -143,39 +143,79 @@
 </div>
 
 <div class="panel p-0 overflow-hidden">
-  <form method="get" class="admin-search-bar">
+  <form method="get" class="admin-search-bar" autocomplete="off">
     <div class="input-icon">
       <span class="input-icon-glyph">⌕</span>
-      <input name="q" value="{{ q }}" class="form-control" placeholder="جست‌وجو (شماره، نام، عنوان، محل، IP یا MAC)…">
+      <input name="q" value="{{ q }}" autocomplete="off" class="form-control" placeholder="جست‌وجو (شماره، نام، عنوان، محل، IP یا MAC)…">
     </div>
-    <select name="kind" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+    <select name="kind" class="form-select form-select-sm w-auto">
       <option value="">همه انواع</option>
       {% for key, label in kind_labels.items() %}<option value="{{ key }}" {% if kind_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
+    <div class="view-toggle" role="group" aria-label="نمای نمایش">
+      <button type="button" class="admin-view-btn" data-admin-view="tiles" title="نمای فشرده (کاشی)">▦</button>
+      <button type="button" class="admin-view-btn" data-admin-view="table" title="نمای جدول با جزئیات">☰</button>
+    </div>
     <button class="btn btn-primary btn-sm">جست‌وجو</button>
-    {% if q or kind_filter %}<a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">پاک کردن</a>{% endif %}
+    <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not (q or kind_filter) %}hidden{% endif %}>پاک کردن</button>
   </form>
 
-  <form id="bulkForm" method="post" class="bulk-action-bar {{ '' if entries else 'd-none' }}">
+  <form id="bulkForm" method="post" class="bulk-action-bar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="bulk-select-all"><input type="checkbox" id="selectAllRows"> انتخاب همه</label>
     <span class="bulk-count"><span id="bulkSelectedCount">0</span> مورد انتخاب شده</span>
     <button type="submit" formaction="{{ url_for('bulk_activate') }}" class="btn btn-sm btn-outline-success" disabled>فعال‌سازی</button>
     <button type="submit" formaction="{{ url_for('bulk_deactivate') }}" class="btn btn-sm btn-outline-secondary" disabled>غیرفعال‌سازی</button>
     <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled onclick="return confirm('موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟')">انتقال به سطل بازیافت</button>
   </form>
 
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0" id="adminTable">
-      <thead>
-        <tr>
-          <th><input type="checkbox" id="selectAllRows" {{ '' if entries else 'disabled' }}></th>
-          <th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th>تلفن (IP / MAC)</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for e in entries %}
-        <tr>
-          <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm"></td>
+  <form id="tileDeleteForm" method="post" class="d-none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+
+  <div id="adminResults">
+    <div class="admin-results-head">
+      <strong>{{ entries|length }} داخلی</strong>
+      {% if pbx_config().enabled %}
+      <div class="tile-legend">
+        <span><i class="lg online"></i>آنلاین</span>
+        <span><i class="lg offline"></i>آفلاین</span>
+        <span><i class="lg slow"></i>تأخیر بالا</span>
+        <span><i class="lg inactive"></i>غیرفعال</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="ext-grid" id="tilesView">
+      {% for e in entries %}
+      {% set ps = phone_status(e) %}
+      <div class="ext-tile {{ ps }}{{ ' inactive' if not e.is_active }}" data-ext="{{ e.extension }}"
+           title="{{ [e.title, e.person_name, (e.department.name if e.department else ''), e.location, e.last_ip, e.mac] | select | join(' • ') }}">
+        <input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm" aria-label="انتخاب {{ e.extension }}">
+        <a class="ext-tile-main" href="{{ url_for('edit_extension', entry_id=e.id) }}">
+          <b dir="ltr">{{ e.extension }}</b><span>{{ e.title }}</span>
+        </a>
+        {% if e.kind != 'staff' %}<span class="ext-kind" title="{{ kind_labels[e.kind] }}">{{ '🛏' if e.kind == 'room' else '⏳' }}</span>{% endif %}
+        <span class="ext-tile-ico" aria-hidden="true">☎</span>
+        <button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="حذف">✕</button>
+      </div>
+      {% else %}
+      <div class="ext-grid-empty">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if (q or kind_filter) else 'هنوز داخلی ثبت نشده است.' }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="table-responsive" id="adminTableView" style="display:none">
+      <table class="table table-hover align-middle mb-0" id="adminTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th>تلفن (IP / MAC)</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm"></td>
           <td class="fw-bold text-primary">{{ e.extension }}{% if e.kind != 'staff' %}<small class="d-block"><span class="badge text-bg-{{ 'info' if e.kind == 'room' else 'warning' }}">{{ kind_labels[e.kind] }}</span></small>{% endif %}</td>
           <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
           <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
@@ -200,6 +240,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 {% endblock %}
