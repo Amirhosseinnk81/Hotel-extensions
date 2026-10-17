@@ -38,7 +38,9 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
+import outage_alerts
 import outage_monitor
+import outage_report
 from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent, shared_scraper
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -547,6 +549,21 @@ class PhoneOutage(db.Model):
         return max(0, int((end - self.started_at).total_seconds()))
 
 
+class OutageEvent(db.Model):
+    """Something worth an alert: a phone's outage was confirmed ('offline') or ended because the phone
+    came back ('online'). The browser polls these (see api_outage_alerts); old rows are purged.
+
+    batch is the sync cycle that produced the event: events of one cycle count as simultaneous,
+    which is what the summary alert ("12 phones went offline together") is built on."""
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(8), nullable=False)  # offline / online
+    batch = db.Column(db.DateTime, nullable=False)
+    extension = db.Column(db.String(20), nullable=False)
+    title = db.Column(db.String(150))
+    detail = db.Column(db.String(20))  # offline: local start time 'HH:MM'; online: how long it was down
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 def _ensure_columns(engine):
     """Lightweight in-place migration: add any columns that a pre-existing
     SQLite database might be missing, without touching existing rows."""
@@ -784,6 +801,11 @@ def pbx_config():
         'outage_enabled': flag('PBX_OUTAGE_MONITOR', True),
         'outage_confirm_syncs': max(1, number('PBX_OUTAGE_CONFIRM_SYNCS', '2')),
         'outage_kinds': tuple(k for k in (p.strip() for p in os.getenv('PBX_OUTAGE_KINDS', 'staff,room').split(',')) if k in EXTENSION_KINDS) or ('staff', 'room'),
+        # Browser alerts built from the outage events (needs the outage tracking)
+        'alerts_enabled': source is not None and flag('PBX_OUTAGE_MONITOR', True) and flag('PBX_ALERTS_ENABLED', True),
+        'alert_summary_threshold': max(1, number('PBX_ALERT_SUMMARY_THRESHOLD', '5')),  # more phones than this at once -> one summary alert
+        'alert_on_recovery': flag('PBX_ALERT_ON_RECOVERY', True),  # quiet alert when a phone comes back
+        'outage_keep_days': max(0, number('PBX_OUTAGE_KEEP_DAYS', '180')),  # 0 = never delete old outages
         'enabled': source is not None,
     }
 
@@ -800,9 +822,44 @@ def make_outage_tracker(cfg):
         db.session.add(record)
         return record
 
+    def emit(kind, record, now):
+        if not cfg['alerts_enabled']:
+            return
+        if kind == 'offline':
+            detail = format_local_datetime(record.started_at, '%H:%M')
+        else:
+            detail = outage_monitor.format_duration((now - record.started_at).total_seconds())
+        db.session.add(OutageEvent(kind=kind, batch=now, extension=record.extension, title=record.title, detail=detail))
+
     return outage_monitor.OutageTracker(open_outages, create, db.session.delete,
                                         lambda value: format_local_datetime(value, OUTAGE_TIME_FORMAT),
-                                        cfg['outage_confirm_syncs'])
+                                        cfg['outage_confirm_syncs'], emit)
+
+
+OUTAGE_EVENT_KEEP_DAYS = 3          # alert events are only needed for a few minutes; keep them a little longer for debugging
+OUTAGE_PURGE_EVERY = timedelta(hours=6)
+OUTAGE_ALERT_MAX_AGE_MINUTES = 15   # a browser that was closed for longer than this is not told about old events
+OUTAGE_PAGE_LIMIT = 500             # rows shown on the report page (the CSV has them all)
+OUTAGE_CSV_LIMIT = 50000
+_outage_purge_state = {'at': None}
+
+
+def purge_old_outage_data(now, keep_days, force=False):
+    """Delete finished outages older than keep_days (0 = keep everything) and old alert events.
+
+    Throttled to once per OUTAGE_PURGE_EVERY unless forced; ongoing outages are never deleted.
+    Returns how many outages were removed. Call inside an app context."""
+    last = _outage_purge_state['at']
+    if not force and last is not None and now - last < OUTAGE_PURGE_EVERY:
+        return 0
+    _outage_purge_state['at'] = now
+    removed = 0
+    if keep_days > 0:
+        cutoff = now - timedelta(days=keep_days)
+        removed = PhoneOutage.query.filter(PhoneOutage.ended_at.is_not(None), PhoneOutage.ended_at < cutoff).delete(synchronize_session=False)
+    OutageEvent.query.filter(OutageEvent.created_at < now - timedelta(days=OUTAGE_EVENT_KEEP_DAYS)).delete(synchronize_session=False)
+    db.session.commit()
+    return removed
 
 
 def note_pbx_failure(message):
@@ -934,6 +991,11 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     db.session.commit()
     if monitor is not None:
         monitor.write_log()  # only now: the file must never describe something the database does not hold
+        try:
+            purge_old_outage_data(now, cfg['outage_keep_days'])
+        except Exception:  # housekeeping must never make a good sync look failed
+            db.session.rollback()
+            logging.getLogger('hotel.purge').exception('purging old outage records failed')
     return {'peers': len(peers), 'extensions': len(numeric), 'ignored': len(peers) - len(numeric), 'created': created,
             'in_trash': in_trash, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2),
             'went_offline': monitor.went_offline if monitor else 0, 'came_online': monitor.came_online if monitor else 0, **counts}
@@ -1973,6 +2035,87 @@ def create_app():
         if is_admin:
             payload['sync'] = {'source': cfg['source'], 'running': pbx_sync_state['running'], 'last_attempt': iso_utc(pbx_sync_state['last_attempt']),
                                'last_error': pbx_sync_state['last_error']}
+        return no_store(jsonify(payload))
+
+    # ---- Outage report (admin) and the alert feed the browser polls ------------------------
+    def outage_filters(args):
+        return {'q': outage_report.normalize_digits(args.get('q', '')).strip()[:60],
+                'from': outage_report.parse_day(args.get('from')), 'to': outage_report.parse_day(args.get('to')),
+                'ongoing': args.get('ongoing') == '1'}
+
+    def outage_query(filters):
+        query = PhoneOutage.query.filter(PhoneOutage.confirmed.is_(True))
+        if filters['q']:
+            pattern = f"%{filters['q']}%"
+            query = query.filter(or_(PhoneOutage.extension.ilike(pattern), PhoneOutage.title.ilike(pattern), PhoneOutage.last_ip.ilike(pattern)))
+        start, end = outage_report.day_bounds_utc(filters['from'], filters['to'], LOCAL_TZ)
+        if start is not None:
+            query = query.filter(PhoneOutage.started_at >= start)
+        if end is not None:
+            query = query.filter(PhoneOutage.started_at < end)
+        if filters['ongoing']:
+            query = query.filter(PhoneOutage.ended_at.is_(None))
+        return query
+
+    def outage_status(outage):
+        if outage.ended_at is None:
+            return 'ongoing'
+        return 'stopped' if outage.end_reason == 'stopped' else 'ended'
+
+    @app.route(f'/{admin_prefix}/outages')
+    @login_required
+    def outages_report():
+        filters = outage_filters(request.args)
+        now = datetime.utcnow()
+        confirmed = PhoneOutage.query.filter(PhoneOutage.confirmed.is_(True))
+        recent = confirmed.filter(PhoneOutage.started_at >= now - timedelta(days=30)).order_by(PhoneOutage.started_at).all()
+        stats = {
+            'offline_now': confirmed.filter(PhoneOutage.ended_at.is_(None)).count(),
+            'today': confirmed.filter(PhoneOutage.started_at >= outage_report.local_midnight_utc(now, LOCAL_TZ)).count(),
+            'worst': outage_report.worst_offenders(((o.extension, o.title, o.duration_seconds) for o in recent), 5),
+        }
+        query = outage_query(filters)
+        total = query.count()
+        rows = query.order_by(PhoneOutage.started_at.desc(), PhoneOutage.id.desc()).limit(OUTAGE_PAGE_LIMIT).all()
+        cfg = pbx_config()
+        return render_template('outages.html', rows=rows, total=total, limit=OUTAGE_PAGE_LIMIT, stats=stats, filters=filters,
+                               outage_status=outage_status, iso_utc=iso_utc, format_duration=outage_monitor.format_duration,
+                               enabled=cfg['outage_enabled'] and cfg['enabled'], keep_days=cfg['outage_keep_days'])
+
+    @app.route(f'/{admin_prefix}/outages/export.csv')
+    @login_required
+    def outages_export():
+        filters = outage_filters(request.args)
+        rows = outage_query(filters).order_by(PhoneOutage.started_at.desc(), PhoneOutage.id.desc()).limit(OUTAGE_CSV_LIMIT).all()
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(['extension', 'title', 'ip', 'started_at', 'ended_at', 'duration_seconds', 'duration', 'status'])
+        stamp = '%Y-%m-%d %H:%M:%S'
+        for o in rows:
+            seconds = o.duration_seconds
+            writer.writerow([o.extension, outage_report.csv_safe(o.title), o.last_ip or '', format_local_datetime(o.started_at, stamp),
+                             format_local_datetime(o.ended_at, stamp) if o.ended_at else '', seconds,
+                             outage_monitor.format_duration(seconds), outage_status(o)])
+        name = 'phone_outages_' + format_local_datetime(datetime.utcnow(), '%Y%m%d_%H%M') + '.csv'
+        return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=name)
+
+    @app.route('/api/outages/alerts')
+    def api_outage_alerts():
+        """Admin only. New outage / recovery alerts since the event id `after` (the browser keeps the last one it saw).
+        Without a usable `after` (first call, or the database was reset) only `latest_id` comes back, so a
+        freshly opened browser starts from 'now' instead of replaying history."""
+        if not current_user.is_authenticated:
+            return no_store(jsonify(ok=False, error='unauthorized')), 401
+        cfg = pbx_config()
+        latest = db.session.query(func.max(OutageEvent.id)).scalar() or 0
+        payload = {'ok': True, 'enabled': cfg['alerts_enabled'], 'latest_id': latest, 'alerts': []}
+        after = request.args.get('after', type=int)
+        if not cfg['alerts_enabled'] or after is None or after < 0 or after > latest:
+            return no_store(jsonify(payload))
+        fresh_from = datetime.utcnow() - timedelta(minutes=OUTAGE_ALERT_MAX_AGE_MINUTES)
+        events = [{'id': e.id, 'kind': e.kind, 'batch': iso_utc(e.batch), 'extension': e.extension, 'title': e.title, 'detail': e.detail}
+                  for e in OutageEvent.query.filter(OutageEvent.id > after, OutageEvent.created_at >= fresh_from).order_by(OutageEvent.id).limit(500).all()]
+        payload['alerts'] = outage_alerts.plan_alerts(events, cfg['alert_summary_threshold'], cfg['alert_on_recovery'], url_for('outages_report'))
         return no_store(jsonify(payload))
 
     @app.route('/api/pbx/sync-now', methods=['POST'])

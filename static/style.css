@@ -699,3 +699,43 @@ details.form-collapsible[open] > summary{padding-bottom:.9rem;border-bottom:1px 
 .ext-tile:hover .ext-tile-del{opacity:1;color:#c0392b}
 #adminResults{transition:opacity .15s}
 #adminResults.is-loading{opacity:.55}
+
+/* ---------- Outage report + alert bell ---------- */
+.nowrap{white-space:nowrap}
+.alert-bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid rgba(255,255,255,.22);border-radius:50%;background:rgba(255,255,255,.08);color:#fff;font-size:1rem;line-height:1;cursor:pointer;transition:background-color .15s ease}
+.alert-bell:hover{background:rgba(255,255,255,.18)}
+.alert-bell:not(.on) span{opacity:.55;filter:grayscale(1)}
+.alert-bell.on{border-color:var(--gold);background:rgba(201,162,75,.22)}
+.alert-bell.on::after{content:"";position:absolute;top:3px;inset-inline-end:3px;width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--navy)}
+.outage-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+.outage-stat{display:flex;flex-direction:column;gap:.15rem;padding:1rem 1.2rem;background:var(--card-bg);border:1px solid var(--line);border-radius:14px}
+.outage-stat small{color:var(--muted);font-size:.76rem}
+.outage-stat-label{font-size:.82rem;font-weight:700;color:var(--muted)}
+.outage-stat-value{font-size:2rem;font-weight:800;line-height:1.25;color:var(--navy)}
+[data-theme="dark"] .outage-stat-value{color:var(--gold-light)}
+.outage-stat.is-hot{background:var(--bad-soft);border-color:var(--bad-line)}
+.outage-stat.is-hot .outage-stat-value{color:var(--bad-ink)}
+.outage-stat-wide{grid-column:span 2}
+@media (max-width:767.98px){.outage-stat-wide{grid-column:auto}}
+.outage-worst{margin:.35rem 0 0;padding-inline-start:1.3rem;font-size:.88rem}
+.outage-worst li{margin:.2rem 0}
+.outage-worst small{margin-inline-start:.3rem;color:var(--muted)}
+.outage-chips{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .7rem;min-height:38px}
+.range-chip{padding:.25rem .85rem;border:1px solid var(--line);border-radius:999px;background:var(--card-bg);color:var(--text);font:inherit;font-size:.8rem;font-weight:700;cursor:pointer}
+.range-chip:hover,.range-chip.active{border-color:var(--gold);background:var(--ivory)}
+.outage-check{display:inline-flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer}
+#outageResults.is-loading{opacity:.55;transition:opacity .15s ease}
+.outage-table tr.is-ongoing > td{background:var(--bad-soft)}
+.outage-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.12rem .7rem;border-radius:999px;font-size:.72rem;font-weight:700}
+.outage-badge.live{background:var(--bad-soft);color:var(--bad-ink);border:1px solid var(--bad-line)}
+.outage-badge.muted{margin-inline-start:.4rem;background:var(--ivory);color:var(--muted);border:1px solid var(--line)}
+.outage-dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--bad);animation:outagePulse 1.6s ease-out infinite}
+@keyframes outagePulse{
+  0%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}
+  70%{box-shadow:0 0 0 .45rem rgba(239,68,68,0)}
+  100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}
+}
+.outage-duration{font-variant-numeric:tabular-nums;font-weight:700}
+.outage-table tr.is-ongoing .outage-duration{color:var(--bad-ink)}
+@media (prefers-reduced-motion:reduce){.outage-dot{animation:none}}
+

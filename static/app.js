@@ -930,6 +930,200 @@
     });
   }
 
+  /* ---------------- Outage report page: live filters, ticking durations ---------------- */
+  function fmtDuration(total) {
+    total = Math.max(0, Math.floor(total));
+    var days = Math.floor(total / 86400);
+    var rest = total % 86400;
+    var clock = pad(Math.floor(rest / 3600)) + ':' + pad(Math.floor((rest % 3600) / 60)) + ':' + pad(rest % 60);
+    return days ? days + 'd ' + clock : clock;
+  }
+
+  function isoDay(date) {
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+  }
+
+  function initOutagePage() {
+    var form = $('form.outage-filters');
+    if (!form) return;
+    var live = setupLiveSearch({
+      form: 'form.outage-filters',
+      loading: '#outageResults',
+      marker: '#outageResults',
+      swaps: ['#outageStats', '#outageResults']
+    });
+
+    function markChips() {
+      var from = form.elements['from'].value, to = form.elements['to'].value;
+      $$('.range-chip', form).forEach(function (chip) {
+        var start = new Date();
+        start.setDate(start.getDate() - (parseInt(chip.getAttribute('data-range'), 10) || 0));
+        chip.classList.toggle('active', from === isoDay(start) && to === isoDay(new Date()));
+      });
+    }
+
+    form.addEventListener('click', function (e) {
+      var chip = closest(e.target, '[data-range]');
+      if (!chip) return;
+      var start = new Date();
+      start.setDate(start.getDate() - (parseInt(chip.getAttribute('data-range'), 10) || 0));
+      form.elements['from'].value = isoDay(start);
+      form.elements['to'].value = isoDay(new Date());
+      markChips();
+      if (live) live.schedule(true);
+    });
+    form.addEventListener('input', markChips);
+
+    var clear = $('#outageClear');
+    if (clear) {
+      clear.addEventListener('click', function () {
+        form.elements['q'].value = '';
+        form.elements['from'].value = '';
+        form.elements['to'].value = '';
+        form.elements['ongoing'].checked = false;
+        markChips();
+        if (live) live.schedule(true);
+      });
+    }
+    markChips();
+
+    // the duration of an outage that is still going on climbs every second without asking the server
+    setInterval(function () {
+      $$('[data-since]').forEach(function (cell) {
+        var started = Date.parse(String(cell.getAttribute('data-since')).replace(/(\.\d{3})\d+/, '$1'));
+        if (isNaN(started)) return;
+        var holder = $('bdi', cell) || cell;
+        holder.textContent = fmtDuration((Date.now() - started) / 1000);
+      });
+    }, 1000);
+
+    // new outages and recoveries appear without touching the page
+    setInterval(function () {
+      if (!document.hidden && live) live.schedule(true);
+    }, 30000);
+  }
+
+  /* ---------------- Outage alerts: Windows notifications through the browser ---------------- */
+  // The server decides what is worth an alert (summaries included); this only shows them.
+  // Browsers allow system notifications on HTTPS pages and on localhost only; elsewhere the alert is an in-page toast.
+  function initOutageAlerts() {
+    var url = document.body.dataset.alertsUrl;
+    var btn = $('#alertToggle');
+    if (!url || !btn) return;
+    var KEY = 'hp_alerts';
+    var LAST = 'hp_alerts_last';
+    var hasApi = 'Notification' in window;
+    var secure = !!window.isSecureContext;
+    var timer = null;
+    var busy = false;
+
+    function systemReady() { return hasApi && secure && Notification.permission === 'granted'; }
+    function isOn() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+    function setOn(on) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {} }
+    function getLast() {
+      var n = NaN;
+      try { n = parseInt(localStorage.getItem(LAST), 10); } catch (e) {}
+      return isNaN(n) ? null : n;
+    }
+    function setLast(n) { try { localStorage.setItem(LAST, String(n)); } catch (e) {} }
+
+    function paint() {
+      var on = isOn();
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+      var mode = !on ? 'خاموش' : (systemReady() ? 'روشن — اعلان ویندوز' : 'روشن — فقط داخل همین صفحه');
+      btn.title = 'هشدار قطعی تلفن‌ها (' + mode + ')';
+    }
+
+    function show(alert) {
+      if (systemReady()) {
+        try {
+          var note = new Notification(alert.title, { body: alert.body || '', tag: alert.tag, silent: !!alert.quiet, lang: 'fa', dir: 'rtl' });
+          note.onclick = function () {
+            window.focus();
+            note.close();
+            if (alert.url && window.location.pathname !== alert.url) window.location.href = alert.url;
+          };
+          return;
+        } catch (e) { /* fall back to the in-page toast */ }
+      }
+      toast(alert.title + (alert.body ? ' — ' + alert.body : ''), alert.quiet ? 'success' : 'danger', { duration: alert.quiet ? 6000 : 12000 });
+    }
+
+    function poll() {
+      if (!isOn() || busy) return;
+      busy = true;
+      var after = getLast();
+      fetch(url + (after === null ? '' : '?after=' + after), { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(function (data) {
+          if (!data || data.ok === false) return;
+          var seen = getLast();   // another tab may have shown some of these already
+          (data.alerts || []).forEach(function (alert) {
+            if (seen === null || alert.id > seen) show(alert);
+          });
+          if (typeof data.latest_id === 'number') setLast(data.latest_id);
+        })
+        .catch(function () { /* the next round tries again */ })
+        .then(function () { busy = false; });
+    }
+
+    function start() {
+      clearInterval(timer);
+      poll();
+      timer = setInterval(poll, 15000);
+    }
+
+    function turnOn() {
+      var finish = function () {
+        try { localStorage.removeItem(LAST); } catch (e) {}   // start from "now": no alerts for what happened while it was off
+        setOn(true);
+        paint();
+        start();
+      };
+      if (!hasApi) {
+        toast('این مرورگر اعلان سیستم را پشتیبانی نمی‌کند؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 12000 });
+        return finish();
+      }
+      if (!secure) {
+        toast('مرورگر روی آدرس http (غیر از localhost) اعلان ویندوز نمی‌دهد. برای اعلان، سایت را با HTTPS یا از روی localhost باز کنید. فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 15000 });
+        return finish();
+      }
+      if (Notification.permission === 'granted') {
+        toast('هشدار قطعی تلفن‌ها روشن شد.', 'success');
+        return finish();
+      }
+      if (Notification.permission === 'denied') {
+        toast('اعلان برای این سایت در مرورگر مسدود است (قفل کنار آدرس ← Notifications ← Allow). فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 15000 });
+        return finish();
+      }
+      var answered = false;
+      var done = function (permission) {
+        if (answered) return;
+        answered = true;
+        if (permission === 'granted') toast('هشدار قطعی تلفن‌ها روشن شد.', 'success');
+        else toast('اجازهٔ اعلان داده نشد؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 12000 });
+        finish();
+      };
+      var request = Notification.requestPermission(done);   // old browsers use the callback, new ones the promise
+      if (request && request.then) request.then(done);
+    }
+
+    btn.addEventListener('click', function () {
+      if (isOn()) {
+        setOn(false);
+        clearInterval(timer);
+        paint();
+        toast('هشدار قطعی تلفن‌ها خاموش شد.', 'info');
+      } else {
+        turnOn();
+      }
+    });
+
+    paint();
+    if (isOn()) start();
+  }
+
   window.HotelUI = { toast: toast, confirm: openConfirm };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -950,5 +1144,7 @@
     initViewToggle();
     initLiveSearch();
     initAdminList();
+    initOutagePage();
+    initOutageAlerts();
   });
 })();

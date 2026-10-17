@@ -211,5 +211,56 @@ class FormatTests(LogCapture):
         self.assertFalse(om.outage_logger.propagate)
 
 
+class EmitHookTests(LogCapture):
+    """The tracker tells the caller about confirmed outages and recoveries (this feeds the browser alerts)."""
+
+    def run_cycles(self, steps, confirm_syncs=2):
+        """steps: [(seconds, {extension: (state, prior)})] -> (events, rows)"""
+        events, rows = [], []
+
+        def create(**fields):
+            row = SimpleNamespace(**fields)
+            rows.append(row)
+            return row
+
+        for seconds, phones in steps:
+            now = T0 + timedelta(seconds=seconds)
+            open_rows = {r.extension: r for r in rows if r.ended_at is None}
+            tracker = om.OutageTracker(open_rows, create, rows.remove, local, confirm_syncs,
+                                       lambda kind, record, at: events.append((kind, record.extension, at)))
+            for ext, (state, prior) in phones.items():
+                tracker.observe(ext, state, prior, f'Title {ext}', '10.0.0.' + ext[-1], now)
+            tracker.stop_unobserved(set(phones), now)
+            tracker.write_log()
+        return events, rows
+
+    def test_no_event_for_a_phone_that_was_already_offline(self):
+        events, _ = self.run_cycles([(0, {'255': ('offline', None)}), (30, {'255': ('offline', 'offline')}), (60, {'255': ('offline', 'offline')})])
+        self.assertEqual(events, [])
+
+    def test_no_event_for_a_blip_shorter_than_the_confirmation(self):
+        events, rows = self.run_cycles([(0, {'255': ('offline', 'online')}), (30, {'255': ('online', 'offline')})])
+        self.assertEqual((events, rows), ([], []))
+
+    def test_offline_event_comes_when_the_outage_is_confirmed_not_before(self):
+        events, _ = self.run_cycles([(0, {'255': ('offline', 'online')})])
+        self.assertEqual(events, [])
+        events, _ = self.run_cycles([(0, {'255': ('offline', 'online')}), (30, {'255': ('offline', 'offline')}), (60, {'255': ('offline', 'offline')})])
+        self.assertEqual(events, [('offline', '255', T0 + timedelta(seconds=30))])   # once, however long it lasts
+
+    def test_online_event_when_the_phone_comes_back(self):
+        events, rows = self.run_cycles([(0, {'255': ('offline', 'online')}), (30, {'255': ('offline', 'offline')}), (90, {'255': ('online', 'offline')})])
+        self.assertEqual([e[0] for e in events], ['offline', 'online'])
+        self.assertEqual(events[1][2] - rows[0].started_at, timedelta(seconds=90))
+
+    def test_no_online_event_when_monitoring_just_stops(self):
+        events, _ = self.run_cycles([(0, {'255': ('offline', 'online')}), (30, {'255': ('offline', 'offline')}), (60, {})])
+        self.assertEqual([e[0] for e in events], ['offline'])
+
+    def test_unknown_state_creates_no_event(self):
+        events, _ = self.run_cycles([(0, {'255': ('unknown', 'online')}), (30, {'255': ('unknown', 'unknown')})])
+        self.assertEqual(events, [])
+
+
 if __name__ == '__main__':
     unittest.main()

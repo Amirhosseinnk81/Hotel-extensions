@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
-<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}>
+<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% if current_user.is_authenticated and pbx_config().alerts_enabled %} data-alerts-url="{{ url_for('api_outage_alerts') }}" data-outages-url="{{ url_for('outages_report') }}"{% endif %}>
 <a class="skip-link no-print" href="#main">پرش به محتوای اصلی</a>
 <div id="updateToast" class="update-toast no-print" role="status" hidden>
   <span>یک به‌روزرسانی جدید موجود است.</span>
@@ -42,6 +42,7 @@
           <button class="header-link dropdown-toggle btn btn-link p-0 border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false">مدیریت</button>
           <ul class="dropdown-menu dropdown-menu-end admin-nav-menu">
             <li><a class="dropdown-item" href="{{ url_for('admin') }}">📋 لیست داخلی‌ها</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('outages_report') }}">📉 گزارش قطعی‌ها</a></li>
             <li><a class="dropdown-item" href="{{ url_for('trash') }}">🗑 سطل بازیافت</a></li>
             <li><a class="dropdown-item" href="{{ url_for('admin_users') }}">👤 مدیریت ادمین‌ها</a></li>
             <li><a class="dropdown-item" href="{{ url_for('activity_log') }}">🕒 لاگ فعالیت‌ها</a></li>
@@ -54,6 +55,9 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-gold btn-sm">خروج</button>
         </form>
+      {% endif %}
+      {% if current_user.is_authenticated and pbx_config().alerts_enabled %}
+        <button type="button" id="alertToggle" class="alert-bell" aria-pressed="false" title="هشدار قطعی تلفن‌ها (خاموش)" aria-label="هشدار قطعی تلفن‌ها"><span aria-hidden="true">🔔</span></button>
       {% endif %}
       <div class="theme-switch" role="group" aria-label="انتخاب پوسته">
         <button type="button" class="theme-btn" data-theme-value="light" title="روشن">☀</button>

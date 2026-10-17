@@ -75,15 +75,18 @@ class OutageTracker:
     create(**fields) -> record: makes (and stores) a new outage record.
     discard(record): deletes an outage record that never got confirmed.
     to_local(datetime) -> str: formats a UTC time for the log.
+    emit(kind, record, now): optional; told when an outage is confirmed ('offline') and when a confirmed
+    outage ends because the phone came back ('online'). It is not called for 'stopped' outages.
     Records need: extension, title, last_ip, started_at, ended_at, end_reason, confirmed, offline_syncs.
     Log lines are collected and written by write_log(), which the caller runs after the database
     commit succeeded, so the file never describes something the database does not hold."""
 
-    def __init__(self, open_outages, create, discard, to_local, confirm_syncs=2):
+    def __init__(self, open_outages, create, discard, to_local, confirm_syncs=2, emit=None):
         self.open = dict(open_outages)
         self._create = create
         self._discard = discard
         self._to_local = to_local
+        self._emit = emit or (lambda kind, record, now: None)
         self.confirm_syncs = max(1, int(confirm_syncs))
         self._lines = []
         self.went_offline = 0
@@ -123,6 +126,7 @@ class OutageTracker:
         since = self._to_local(record.started_at)
         self._lines.append(make_line(self._to_local(now), 'OFFLINE', record.extension, record.last_ip,
                                      f'down since {since}', record.title))
+        self._emit('offline', record, now)
 
     def _close(self, record, now, reason):
         self.open.pop(record.extension, None)
@@ -136,6 +140,7 @@ class OutageTracker:
             self.came_online += 1
             self._lines.append(make_line(self._to_local(now), 'ONLINE', record.extension, record.last_ip,
                                          f'was down {lasted}', record.title))
+            self._emit('online', record, now)
         else:
             self._lines.append(make_line(self._to_local(now), 'STOPPED', record.extension, record.last_ip,
                                          f'monitoring ended after {lasted} (disabled, removed or gone from the PBX)',
