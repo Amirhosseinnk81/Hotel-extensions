@@ -801,8 +801,9 @@ def pbx_config():
         'outage_enabled': flag('PBX_OUTAGE_MONITOR', True),
         'outage_confirm_syncs': max(1, number('PBX_OUTAGE_CONFIRM_SYNCS', '2')),
         'outage_kinds': tuple(k for k in (p.strip() for p in os.getenv('PBX_OUTAGE_KINDS', 'staff,room').split(',')) if k in EXTENSION_KINDS) or ('staff', 'room'),
-        # Browser alerts built from the outage events (needs the outage tracking)
-        'alerts_enabled': source is not None and flag('PBX_OUTAGE_MONITOR', True) and flag('PBX_ALERTS_ENABLED', True),
+        # Browser alerts built from the outage events. They follow the outage tracking; the bell itself is only
+        # shown when a PBX link exists (see base.html).
+        'alerts_enabled': flag('PBX_OUTAGE_MONITOR', True) and flag('PBX_ALERTS_ENABLED', True),
         'alert_summary_threshold': max(1, number('PBX_ALERT_SUMMARY_THRESHOLD', '5')),  # more phones than this at once -> one summary alert
         'alert_on_recovery': flag('PBX_ALERT_ON_RECOVERY', True),  # quiet alert when a phone comes back
         'outage_keep_days': max(0, number('PBX_OUTAGE_KEEP_DAYS', '180')),  # 0 = never delete old outages
@@ -2331,4 +2332,4 @@ if __name__ == '__main__':
     # This built-in server is for local development only. In production,
     # run behind a real WSGI server instead — see DEPLOYMENT.md.
     debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
-    create_app().run(debug=debug_mode, host='127.0.0.1', port=5000)
+    create_app().run(debug=debug_mode, host='127.0.0.1', port=5000)

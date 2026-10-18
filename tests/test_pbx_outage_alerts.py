@@ -183,11 +183,19 @@ class AlertFeedTests(AlertCase):
 
 
 class BellTests(AlertCase):
+    ENV = {**AlertCase.ENV, 'PBX_WEB_HOST': 'https://10.0.0.1', 'PBX_WEB_USER': 'u', 'PBX_WEB_PASS': 'p'}
+
     def test_bell_is_only_for_signed_in_admins_when_alerts_are_on(self):
         self.assertIn('id="alertToggle"', self.admin.get(self.url('')).get_data(as_text=True))
         self.assertIn('data-alerts-url="/api/outages/alerts"', self.admin.get(self.url('')).get_data(as_text=True))
         self.assertNotIn('alertToggle', self.anon.get('/').get_data(as_text=True))
         with mock.patch.dict(os.environ, {'PBX_ALERTS_ENABLED': '0'}):
+            self.assertNotIn('alertToggle', self.admin.get(self.url('')).get_data(as_text=True))
+
+    def test_no_bell_without_a_pbx_link(self):
+        with mock.patch.dict(os.environ):
+            for key in ('PBX_AMI_HOST', 'PBX_AMI_USER', 'PBX_AMI_SECRET', 'PBX_WEB_HOST', 'PBX_WEB_USER', 'PBX_WEB_PASS'):
+                os.environ.pop(key, None)
             self.assertNotIn('alertToggle', self.admin.get(self.url('')).get_data(as_text=True))
 
     def test_menu_links_to_the_report(self):
@@ -207,6 +215,10 @@ class ReportPageTests(AlertCase):
     def page(self, query=''):
         return self.admin.get(self.url('/outages') + query).get_data(as_text=True)
 
+    def table(self, query=''):
+        """Only the results part of the page: the statistics box above it names phones that the filters hide."""
+        return self.page(query).split('id="outageResults"')[1]
+
     def test_page_needs_a_login(self):
         response = self.anon.get(self.url('/outages'))
         self.assertEqual(response.status_code, 302)
@@ -220,26 +232,26 @@ class ReportPageTests(AlertCase):
         self.assertIn('data-since=', html)    # the live duration ticks from this
 
     def test_only_ongoing(self):
-        html = self.page('?ongoing=1')
+        html = self.table('?ongoing=1')
         self.assertIn('Kitchen', html)
         self.assertNotIn('Reception', html)
 
     def test_search_by_extension_with_persian_digits_title_and_ip(self):
-        self.assertIn('Reception', self.page('?q=۲۵۵'))
-        self.assertNotIn('Kitchen', self.page('?q=۲۵۵'))
-        self.assertIn('Kitchen', self.page('?q=kitch'))
-        self.assertIn('Kitchen', self.page('?q=10.0.0.9'))
+        self.assertIn('Reception', self.table('?q=۲۵۵'))
+        self.assertNotIn('Kitchen', self.table('?q=۲۵۵'))
+        self.assertIn('Kitchen', self.table('?q=kitch'))
+        self.assertIn('Kitchen', self.table('?q=10.0.0.9'))
 
     def test_date_range_uses_the_start_time_in_local_days(self):
         day = m.format_local_datetime(self.base, '%Y-%m-%d')
-        html = self.page(f'?from={day}&to={day}')
+        html = self.table(f'?from={day}&to={day}')
         self.assertIn('Reception', html)
         self.assertNotIn('Kitchen', html)
         nobody = m.format_local_datetime(self.base - timedelta(days=30), '%Y-%m-%d')
-        self.assertNotIn('Reception', self.page(f'?from={nobody}&to={nobody}'))
+        self.assertNotIn('Reception', self.table(f'?from={nobody}&to={nobody}'))
 
     def test_garbage_filters_are_ignored(self):
-        self.assertIn('Reception', self.page('?from=nonsense&to=2026-99-99&ongoing=maybe'))
+        self.assertIn('Reception', self.table('?from=nonsense&to=2026-99-99&ongoing=maybe'))
 
     def test_stats(self):
         html = self.page()
@@ -375,11 +387,12 @@ class ConfigTests(unittest.TestCase):
                                            'PBX_OUTAGE_MONITOR': '0', 'PBX_ALERTS_ENABLED': '1'}):
             self.assertFalse(m.pbx_config()['alerts_enabled'])
 
-    def test_no_alerts_without_a_pbx_link(self):
-        with mock.patch.dict(os.environ, {'PBX_ALERTS_ENABLED': '1'}):
+    def test_alert_events_do_not_depend_on_how_the_pbx_is_reached(self):
+        # tests (and any custom setup) can feed the sync a client directly, with no PBX_* variables at all
+        with mock.patch.dict(os.environ, {'PBX_ALERTS_ENABLED': '1', 'PBX_OUTAGE_MONITOR': '1'}):
             for key in ('PBX_AMI_HOST', 'PBX_AMI_USER', 'PBX_AMI_SECRET', 'PBX_WEB_HOST', 'PBX_WEB_USER', 'PBX_WEB_PASS'):
                 os.environ.pop(key, None)
-            self.assertFalse(m.pbx_config()['alerts_enabled'])
+            self.assertTrue(m.pbx_config()['alerts_enabled'])
 
 
 if __name__ == '__main__':
