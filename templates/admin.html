@@ -152,12 +152,33 @@
       <option value="">همه انواع</option>
       {% for key, label in kind_labels.items() %}<option value="{{ key }}" {% if kind_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
+    <select name="department" class="form-select form-select-sm w-auto" aria-label="بخش">
+      <option value="">همه بخش‌ها</option>
+      <option value="none" {% if department_filter == 'none' %}selected{% endif %}>بدون بخش</option>
+      {% for d in departments %}<option value="{{ d.id }}" {% if department_filter == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    </select>
+    <select name="active" class="form-select form-select-sm w-auto" aria-label="وضعیت ثبت">
+      <option value="">فعال و غیرفعال</option>
+      <option value="1" {% if active_filter == '1' %}selected{% endif %}>فقط فعال</option>
+      <option value="0" {% if active_filter == '0' %}selected{% endif %}>فقط غیرفعال</option>
+    </select>
+    {% if pbx_config().enabled %}
+    <select name="phone" class="form-select form-select-sm w-auto" aria-label="وضعیت تلفن">
+      <option value="">همه وضعیت‌های تلفن</option>
+      {% for key, label in phone_filter_labels.items() %}<option value="{{ key }}" {% if phone_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <select name="mac_state" class="form-select form-select-sm w-auto" aria-label="MAC">
+      <option value="">MAC: همه</option>
+      <option value="has" {% if mac_filter == 'has' %}selected{% endif %}>دارای MAC</option>
+      <option value="missing" {% if mac_filter == 'missing' %}selected{% endif %}>بدون MAC</option>
+    </select>
     <div class="view-toggle" role="group" aria-label="نمای نمایش">
       <button type="button" class="admin-view-btn" data-admin-view="tiles" title="نمای فشرده (کاشی)">▦</button>
       <button type="button" class="admin-view-btn" data-admin-view="table" title="نمای جدول با جزئیات">☰</button>
     </div>
     <button class="btn btn-primary btn-sm">جست‌وجو</button>
-    <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not (q or kind_filter) %}hidden{% endif %}>پاک کردن</button>
+    <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not filters_active %}hidden{% endif %}>پاک کردن</button>
   </form>
 
   <form id="bulkForm" method="post" class="bulk-action-bar">
@@ -200,7 +221,7 @@
         <button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="حذف">✕</button>
       </div>
       {% else %}
-      <div class="ext-grid-empty">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if (q or kind_filter) else 'هنوز داخلی ثبت نشده است.' }}</div>
+      <div class="ext-grid-empty">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if filters_active else 'هنوز داخلی ثبت نشده است.' }}</div>
       {% endfor %}
     </div>
 
@@ -236,7 +257,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if (q or kind_filter) else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
+        <tr><td colspan="8" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if filters_active else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

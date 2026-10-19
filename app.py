@@ -38,6 +38,7 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
+import envfile
 import outage_alerts
 import outage_monitor
 import outage_report
@@ -46,6 +47,9 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# Settings from the .env file next to this file (variables already set in the system win; PBX_DOTENV=0 turns it off).
+# Must stay above the first os.getenv below, because some settings are read at import time.
+envfile.load_dotenv(envfile.env_path(BASE_DIR))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
 ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
@@ -242,6 +246,25 @@ def phone_label(entry):
     if not status:
         return ''
     return PHONE_SLOW_LABEL if phone_is_slow(entry) else PHONE_STATUS_LABELS[status]
+
+
+ADMIN_PHONE_FILTERS = {
+    'online': 'آنلاین',
+    'slow': 'آنلاین با تأخیر بالا',
+    'offline': 'آفلاین',
+    'unknown': 'نامشخص',
+    'none': 'بدون اطلاعات PBX',
+}
+
+
+def admin_phone_matches(entry, wanted):
+    """Admin list filter on the phone state shown in the badges (same rules as display_phone_status)."""
+    status = display_phone_status(entry)
+    if wanted == 'none':
+        return status is None
+    if wanted == 'slow':
+        return phone_is_slow(entry)
+    return status == wanted
 
 
 def parse_row_extras(row):
@@ -1280,9 +1303,31 @@ def create_app():
         kind_filter = request.args.get('kind', '')
         if kind_filter not in EXTENSION_KINDS:
             kind_filter = ''
+        department_filter = request.args.get('department', '').strip()
+        if department_filter != 'none' and not department_filter.isdigit():
+            department_filter = ''
+        active_filter = request.args.get('active', '')
+        if active_filter not in ('1', '0'):
+            active_filter = ''
+        phone_filter = request.args.get('phone', '')
+        if phone_filter not in ADMIN_PHONE_FILTERS:
+            phone_filter = ''
+        mac_filter = request.args.get('mac_state', '')
+        if mac_filter not in ('has', 'missing'):
+            mac_filter = ''
         entries_query = Extension.query.filter_by(is_deleted=False)
         if kind_filter:
             entries_query = entries_query.filter_by(kind=kind_filter)
+        if department_filter == 'none':
+            entries_query = entries_query.filter(Extension.department_id.is_(None))
+        elif department_filter:
+            entries_query = entries_query.filter(Extension.department_id == int(department_filter))
+        if active_filter:
+            entries_query = entries_query.filter(Extension.is_active == (active_filter == '1'))
+        if mac_filter == 'has':
+            entries_query = entries_query.filter(Extension.mac.isnot(None), Extension.mac != '')
+        elif mac_filter == 'missing':
+            entries_query = entries_query.filter(or_(Extension.mac.is_(None), Extension.mac == ''))
         if q:
             pattern = f'%{q}%'
             conditions = [Extension.extension.ilike(pattern), Extension.title.ilike(pattern), Extension.person_name.ilike(pattern), Extension.location.ilike(pattern), Extension.last_ip.ilike(pattern)]
@@ -1291,12 +1336,21 @@ def create_app():
                 conditions.append(func.replace(Extension.mac, ':', '').ilike(f'%{mac_digits}%'))
             entries_query = entries_query.filter(or_(*conditions))
         entries = entries_query.order_by(Extension.extension).all()
+        if phone_filter:  # live state depends on staleness, so it is evaluated in Python
+            entries = [e for e in entries if admin_phone_matches(e, phone_filter)]
+        filters_active = bool(q or kind_filter or department_filter or active_filter or phone_filter or mac_filter)
         return render_template(
             'admin.html',
             entries=entries,
             departments=Department.query.order_by(Department.name).all(),
             q=q,
             kind_filter=kind_filter,
+            department_filter=department_filter,
+            active_filter=active_filter,
+            phone_filter=phone_filter,
+            mac_filter=mac_filter,
+            phone_filter_labels=ADMIN_PHONE_FILTERS,
+            filters_active=filters_active,
             import_stats=session.get('import_stats'),
             import_filename=session.get('import_original_name'),
             stats=get_cached_stats(),

@@ -359,8 +359,8 @@ body{
 .dept-chip-actions .btn{padding:.12rem .45rem;font-size:.75rem;line-height:1.4}
 
 /* ---------- Admin: search bar ---------- */
-.admin-search-bar{display:flex;gap:.5rem;padding:1rem 1.25rem;border-bottom:1px solid var(--line);align-items:center}
-.admin-search-bar .input-icon{flex:1}
+.admin-search-bar{display:flex;flex-wrap:wrap;gap:.5rem;padding:1rem 1.25rem;border-bottom:1px solid var(--line);align-items:center}
+.admin-search-bar .input-icon{flex:1 1 240px;min-width:200px}
 .bulk-action-bar{display:flex;align-items:center;gap:.6rem;padding:.6rem 1.25rem;background:var(--ivory);border-bottom:1px solid var(--line);flex-wrap:wrap}
 .bulk-count{font-size:.8rem;color:var(--muted);font-weight:600}
 

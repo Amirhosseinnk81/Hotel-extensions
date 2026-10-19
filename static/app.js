@@ -845,11 +845,14 @@
 
     var form = document.querySelector('form.admin-search-bar');
     var clearBtn = document.getElementById('adminClear');
+    function adminFilterFields() {
+      return Array.prototype.filter.call(form.elements, function (el) { return el.tagName === 'SELECT'; });
+    }
     function updateClear() {
       if (!form || !clearBtn) return;
       var q = form.elements.q ? form.elements.q.value.trim() : '';
-      var kind = form.elements.kind ? form.elements.kind.value : '';
-      clearBtn.hidden = !(q || kind);
+      var anyFilter = adminFilterFields().some(function (el) { return el.value; });
+      clearBtn.hidden = !(q || anyFilter);
     }
     var live = setupLiveSearch({
       form: 'form.admin-search-bar',
@@ -865,7 +868,7 @@
     if (clearBtn) {
       clearBtn.addEventListener('click', function () {
         if (form.elements.q) form.elements.q.value = '';
-        if (form.elements.kind) form.elements.kind.value = '';
+        adminFilterFields().forEach(function (el) { el.value = ''; });
         updateClear();
         if (live) live.schedule(true); else window.location.href = window.location.pathname;
       });
