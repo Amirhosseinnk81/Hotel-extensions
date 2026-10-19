@@ -21,7 +21,7 @@
 </script>
 {% if lang == 'en' %}<script>window.HP_LANG = 'en'; window.HP_I18N = {{ js_i18n()|tojson }};</script>{% endif %}
 <meta name="theme-color" content="#0d0d10">
-<link href="{{ url_for('static', filename='vendor/bootstrap.rtl.min.css' if lang == 'fa' else 'vendor/bootstrap.min.css') }}" rel="stylesheet">
+<link href="{{ vendor_asset('bootstrap.rtl.min.css' if lang == 'fa' else 'bootstrap.min.css') }}" rel="stylesheet">
 <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
 <body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% if current_user.is_authenticated and pbx_config().enabled and pbx_config().alerts_enabled %} data-alerts-url="{{ url_for('api_outage_alerts') }}" data-outages-url="{{ url_for('outages_report') }}"{% endif %}>
@@ -170,7 +170,7 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ vendor_asset('bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 <script>
   (function () {

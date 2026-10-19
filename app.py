@@ -39,6 +39,7 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
+import envfile
 import i18n
 import outage_alerts
 import outage_monitor
@@ -48,6 +49,9 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# Settings from the .env file next to this file (variables already set in the system win; PBX_DOTENV=0 turns it off).
+# Must stay above the first os.getenv below, because some settings are read at import time.
+envfile.load_dotenv(envfile.env_path(BASE_DIR))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
 ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
@@ -231,6 +235,24 @@ def display_phone_status(entry):
     if datetime.utcnow() - entry.status_updated_at > timedelta(minutes=PBX_STATUS_STALE_MINUTES):
         return 'unknown'
     return entry.reg_status if entry.reg_status in ('online', 'offline') else 'unknown'
+
+
+BOOTSTRAP_CDN = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/'
+VENDOR_CDN = {
+    'bootstrap.min.css': BOOTSTRAP_CDN + 'css/bootstrap.min.css',
+    'bootstrap.rtl.min.css': BOOTSTRAP_CDN + 'css/bootstrap.rtl.min.css',
+    'bootstrap.bundle.min.js': BOOTSTRAP_CDN + 'js/bootstrap.bundle.min.js',
+}
+
+
+def vendor_asset_url(name):
+    """URL of a Bootstrap file: static/vendor/<name> when it is there (works offline), else the same
+    version from the CDN, so a missing vendor/ folder never leaves the pages without styling or scripts.
+    Run tools/fetch_vendor.py once to put the files in place."""
+    local = os.path.join(BASE_DIR, 'static', 'vendor', name)
+    if os.path.isfile(local) and os.path.getsize(local) > 1000:
+        return url_for('static', filename='vendor/' + name)
+    return VENDOR_CDN[name]
 
 
 def phone_is_slow(entry):
@@ -1106,6 +1128,7 @@ def create_app():
     login_manager.init_app(app)
     CSRFProtect(app)
     app.jinja_env.globals['dept_icon'] = department_icon
+    app.jinja_env.globals['vendor_asset'] = vendor_asset_url
     def can_see_contact():
         return app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
 

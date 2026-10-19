@@ -695,23 +695,53 @@
 
   /* ---------------- Extension detail modal ---------------- */
   function initDetailModal() {
-    var modalEl = $('#extensionDetailModal');
-    if (!modalEl || typeof bootstrap === 'undefined') return;
-    var modal = new bootstrap.Modal(modalEl);
+    var dialog = $('#extensionDetailModal');   // a native <dialog>: hidden by the browser until opened, no Bootstrap needed
+    if (!dialog) return;
     var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus', 'phonecheck'];
 
+    function open() {
+      if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
+      else dialog.setAttribute('open', '');
+    }
+    function close() {
+      if (typeof dialog.close === 'function') dialog.close();
+      else dialog.removeAttribute('open');
+    }
+    function show(card) {
+      fields.forEach(function (key) {
+        var node = $('[data-field="' + key + '"]', dialog);
+        if (node) node.textContent = card.dataset[key] || '—';
+      });
+      var presenceEl = $('[data-field="presence"]', dialog);
+      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? tr('حاضر') : tr('خارج از شیفت');
+      open();
+    }
+
     document.addEventListener('click', function (e) {
+      if (e.target === dialog || closest(e.target, '[data-detail-close]')) { close(); return; }   // backdrop or X
       var card = closest(e.target, '.extension-card');
       if (!card) return;
       if (closest(e.target, '.fav-btn') || closest(e.target, '.copy-btn')) return;
-      fields.forEach(function (key) {
-        var node = $('[data-field="' + key + '"]', modalEl);
-        if (node) node.textContent = card.dataset[key] || '—';
-      });
-      var presenceEl = $('[data-field="presence"]', modalEl);
-      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? tr('حاضر') : tr('خارج از شیفت');
-      modal.show();
+      show(card);
     });
+    document.addEventListener('keydown', function (e) {
+      if ((e.key !== 'Enter' && e.key !== ' ') || !e.target || !e.target.classList || !e.target.classList.contains('extension-card')) return;
+      e.preventDefault();
+      show(e.target);
+    });
+  }
+
+  /* ---------------- Advanced search: a plain show/hide toggle ---------------- */
+  function initAdvancedSearch() {
+    var toggle = $('#advancedToggle');
+    var panel = $('#advancedSearch');
+    if (!toggle || !panel) return;
+    function set(open) {
+      panel.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+    }
+    toggle.addEventListener('click', function () { set(panel.hidden); });
+    set(!panel.hidden);
   }
 
   /* ---------------- Live search: results update while typing, no button needed ---------------- */
@@ -1154,6 +1184,7 @@
     initUpdatePolling();
     initPhoneStatusPolling();
     initDetailModal();
+    initAdvancedSearch();
     initBulkSelect();
     initViewToggle();
     initLiveSearch();

@@ -18,32 +18,32 @@
 
 <div class="sticky-search no-print">
   <form class="search-card mb-2" method="get">
-    <div class="row g-2 align-items-center">
-      <div class="col-lg-3">
+    <div class="search-grid">
+      <div class="sg-search">
         <div class="input-icon{% if query %} has-value{% endif %}">
           <span class="input-icon-glyph" aria-hidden="true">⌕</span>
-          <input id="instantSearch" type="search" name="q" value="{{ (query)|e }}" class="form-control form-control-lg" placeholder="{{ t('نام، واحد، شماره داخلی یا محل…') }}" autocomplete="off" enterkeyhint="search" aria-label="{{ t('جست‌وجوی داخلی') }}">
+          <input id="instantSearch" type="search" name="q" value="{{ (query)|e }}" class="form-control" placeholder="{{ t('نام، واحد، شماره داخلی یا محل…') }}" autocomplete="off" enterkeyhint="search" aria-label="{{ t('جست‌وجوی داخلی') }}">
           <button type="button" class="input-clear" id="searchClear" aria-label="{{ t('پاک کردن جست‌وجو') }}" {% if not query %}hidden{% endif %}>✕</button>
           <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
       </div>
-      <div class="col-6 col-lg-2">
-        <select name="department" class="form-select form-select-lg" aria-label="{{ t('بخش') }}">
+      <div class="sg-field">
+        <select name="department" class="form-select" aria-label="{{ t('بخش') }}">
           <option value="">{{ t('همه بخش‌ها') }}</option>
           {% for d in departments %}
             <option value="{{ (d.id)|e }}" {% if d.id == selected_department %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-6 col-lg-2">
-        <select name="status" class="form-select form-select-lg" aria-label="{{ t('فعال یا غیرفعال') }}">
+      <div class="sg-field">
+        <select name="status" class="form-select" aria-label="{{ t('فعال یا غیرفعال') }}">
           <option value="">{{ t('همه وضعیت‌ها') }}</option>
           <option value="active" {% if status == 'active' %}selected{% endif %}>{{ t('فعال') }}</option>
           <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>{{ t('غیرفعال') }}</option>
         </select>
       </div>
-      <div class="col-6 col-lg-2">
-        <select name="sort" class="form-select form-select-lg" aria-label="{{ t('مرتب‌سازی') }}">
+      <div class="sg-field">
+        <select name="sort" class="form-select" aria-label="{{ t('مرتب‌سازی') }}">
           <optgroup label="{{ t('شماره داخلی') }}">
             <option value="extension:asc" {% if sort_value=='extension:asc' %}selected{% endif %}>{{ t('صعودی') }}</option>
             <option value="extension:desc" {% if sort_value=='extension:desc' %}selected{% endif %}>{{ t('نزولی') }}</option>
@@ -70,40 +70,40 @@
           </optgroup>
         </select>
       </div>
-      <div class="col-6 col-lg-2">
-        <select name="per_page" class="form-select form-select-lg" aria-label="{{ t('تعداد در هر صفحه') }}">
+      <div class="sg-field">
+        <select name="per_page" class="form-select" aria-label="{{ t('تعداد در هر صفحه') }}">
           <option value="20" {% if per_page == 20 %}selected{% endif %}>{{ t('۲۰ مورد') }}</option>
           <option value="50" {% if per_page == 50 %}selected{% endif %}>{{ t('۵۰ مورد') }}</option>
           <option value="100" {% if per_page == 100 %}selected{% endif %}>{{ t('۱۰۰ مورد') }}</option>
           <option value="all" {% if per_page == 'all' %}selected{% endif %}>{{ t('همه موارد') }}</option>
         </select>
       </div>
-      <div class="col-6 col-lg-1">
-        <button class="btn btn-primary btn-lg btn-search w-100">{{ t('جست‌وجو') }}</button>
+      <div class="sg-submit">
+        <button class="btn btn-primary btn-search">{{ t('جست‌وجو') }}</button>
       </div>
     </div>
-
+    {% set adv_open = ext_q or person_q or title_q or location_q %}
     <div class="advanced-toggle-row">
-      <button class="advanced-toggle-btn" type="button" data-bs-toggle="collapse" data-bs-target="#advancedSearch">
-        {{ t('جست‌وجوی پیشرفته') }} ▾
+      <button class="advanced-toggle-btn" type="button" id="advancedToggle" aria-controls="advancedSearch" aria-expanded="{{ 'true' if adv_open else 'false' }}">
+        {{ t('جست‌وجوی پیشرفته') }} <span class="adv-caret" aria-hidden="true">▾</span>
       </button>
       <label class="fav-filter-label">
         <input type="checkbox" id="onlyFavCheckbox"> {{ t('فقط علاقه‌مندی‌ها') }} ⭐
       </label>
     </div>
 
-    <div class="collapse {% if ext_q or person_q or title_q or location_q %}show{% endif %}" id="advancedSearch">
-      <div class="advanced-search-panel row g-2 mt-1">
-        <div class="col-6 col-lg-3">
+    <div class="advanced-search-panel" id="advancedSearch"{% if not adv_open %} hidden{% endif %}>
+      <div class="adv-grid">
+        <div class="sg-field">
           <input name="ext" value="{{ (ext_q)|e }}" class="form-control" placeholder="{{ t('شماره داخلی') }}">
         </div>
-        <div class="col-6 col-lg-3">
+        <div class="sg-field">
           <input name="person" value="{{ (person_q)|e }}" class="form-control" placeholder="{{ t('نام شخص') }}">
         </div>
-        <div class="col-6 col-lg-3">
+        <div class="sg-field">
           <input name="title_q" value="{{ (title_q)|e }}" class="form-control" placeholder="{{ t('عنوان شغلی') }}">
         </div>
-        <div class="col-6 col-lg-3">
+        <div class="sg-field">
           <input name="location_q" value="{{ (location_q)|e }}" class="form-control" placeholder="{{ t('محل استقرار') }}">
         </div>
       </div>
@@ -122,7 +122,7 @@
   <div class="live-bar" id="liveBar" data-state="connecting" aria-live="polite">
     <span class="live-dot" aria-hidden="true"></span>
     <span id="liveText">{{ t('در حال اتصال…') }}</span>
-    <button type="button" class="live-refresh" id="liveRefresh" title="{{ t('بروزرسانی همین حالا') }}" aria-label="{{ t('بروزرسانی همین حالا') }}"><span aria-hidden="true">⟳</span></button>
+    {% if current_user.is_authenticated %}<button type="button" class="live-refresh" id="liveRefresh" title="{{ t('بروزرسانی همین حالا') }}" aria-label="{{ t('بروزرسانی همین حالا') }}"><span aria-hidden="true">⟳</span></button>{% endif %}
   </div>
   {% endif %}
 </div>
@@ -152,10 +152,10 @@
 
 <div class="empty-state mb-3 no-print" id="filterEmpty" hidden>{{ t('موردی مطابق جست‌وجو یا فیلتر انتخابی در این صفحه پیدا نشد.') }}</div>
 
-<div class="row g-3" id="cardsView">
+<div class="ext-grid" id="cardsView">
   {% for e in entries %}
-    <div class="col-sm-6 col-lg-4 col-xxl-3" data-card-wrapper>
-      <article class="extension-card h-100" data-ext="{{ e.extension }}"
+    <div class="ext-cell" data-card-wrapper>
+      <article class="extension-card" data-ext="{{ e.extension }}"
         data-extension="{{ e.extension }}"
         data-title="{{ e.title }}"
         data-person="{{ e.person_name or '—' }}"
@@ -172,30 +172,20 @@
         data-phone-state="{{ phone_status(e) or '' }}"
         data-phonecheck="{{ (e.status_updated_at | local_dt('%H:%M')) if phone_status(e) and e.status_updated_at else '' }}"
         role="button" tabindex="0">
-        <div class="d-flex justify-content-between align-items-start card-top-row">
-          <div class="card-main-info">
-            <span class="department-tag">{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else t('بدون بخش') }}</span>
-            <h3>{{ e.title }}</h3>
-            {% if e.person_name %}<p class="person-name">{{ e.person_name }}</p>{% endif %}
-          </div>
-          <div class="card-status-col">
-            <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="{{ t('افزودن به علاقه‌مندی‌ها') }}" aria-label="{{ t('افزودن به علاقه‌مندی‌ها') }}">☆</button>
-            <!-- <span class="status-pill {{ '' if e.is_active else 'off' }}">{{ t('فعال') if e.is_active else t('غیرفعال') }}</span> -->
-            {{ phone_badge(e) }}
-            <!-- <span class="presence-pill {{ '' if e.is_present else 'off' }}">{{ t('حاضر') if e.is_present else t('خارج از شیفت') }}</span> -->
-          </div>
-        </div>
-        <div class="extension-number-row">
+        <div class="tile-top">
           <div class="extension-number">{{ e.extension }}</div>
+          <div class="card-status-col">{{ phone_badge(e) }}</div>
+        </div>
+        <h3>{{ e.title }}</h3>
+        <p class="tile-sub">{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else t('بدون بخش') }}</p>
+        <div class="tile-actions">
+          <button type="button" class="fav-btn" data-ext="{{ e.extension }}" title="{{ t('افزودن به علاقه‌مندی‌ها') }}" aria-label="{{ t('افزودن به علاقه‌مندی‌ها') }}">☆</button>
           <button type="button" class="copy-btn" data-ext="{{ e.extension }}" title="{{ t('کپی شماره') }}" aria-label="{{ t('کپی شماره') }}">📋</button>
         </div>
-        {% if e.location %}<small class="location-line">⌖ {{ e.location }}</small>{% endif %}
-        {% if e.department and e.department.working_hours %}<small class="hours-line">🕒 {{ e.department.working_hours }}</small>{% endif %}
-        {% if e.notes %}<p class="notes">{{ e.notes }}</p>{% endif %}
       </article>
     </div>
   {% else %}
-    <div class="col-12"><div class="empty-state">{{ t('نتیجه‌ای پیدا نشد.') }}</div></div>
+    <div class="ext-empty"><div class="empty-state">{{ t('نتیجه‌ای پیدا نشد.') }}</div></div>
   {% endfor %}
 </div>
 
@@ -267,34 +257,30 @@
 {% endif %}
 </div>
 
-<div class="modal fade no-print" id="extensionDetailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content detail-modal">
-      <div class="modal-header">
-        <h5 class="modal-title">{{ t('جزئیات داخلی') }} <span data-field="extension"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ t('بستن') }}"></button>
-      </div>
-      <div class="modal-body">
-        <div class="detail-row"><span>{{ t('عنوان') }}</span><strong data-field="title"></strong></div>
-        <div class="detail-row"><span>{{ t('نام مسئول') }}</span><strong data-field="person"></strong></div>
-        <div class="detail-row"><span>{{ t('بخش') }}</span><strong data-field="department"></strong></div>
-        <div class="detail-row"><span>{{ t('محل استقرار') }}</span><strong data-field="location"></strong></div>
-        {% if can_see_contact() %}
-        <div class="detail-row"><span>{{ t('ایمیل') }}</span><strong data-field="email"></strong></div>
-        <div class="detail-row"><span>{{ t('موبایل سازمانی') }}</span><strong data-field="mobile"></strong></div>
-        {% endif %}
-        <div class="detail-row"><span>{{ t('ساعات کاری بخش') }}</span><strong data-field="hours"></strong></div>
-        <div class="detail-row"><span>{{ t('وضعیت حضور') }}</span><strong data-field="presence"></strong></div>
-        {% if show_phone_status %}
-        <div class="detail-row"><span>{{ t('وضعیت تلفن') }}</span><strong data-field="phonestatus"></strong></div>
-        <div class="detail-row"><span>{{ t('آخرین بررسی') }}</span><strong data-field="phonecheck"></strong></div>
-        {% endif %}
-        <div class="detail-row"><span>{{ t('توضیحات') }}</span><strong data-field="notes"></strong></div>
-        <div class="detail-row"><span>{{ t('تاریخ ایجاد') }}</span><strong data-field="created"></strong></div>
-        <div class="detail-row"><span>{{ t('تاریخ ویرایش') }}</span><strong data-field="updated"></strong></div>
-      </div>
-    </div>
+<dialog class="detail-dialog no-print" id="extensionDetailModal" aria-labelledby="detailTitle">
+  <div class="detail-head">
+    <h2 id="detailTitle">{{ t('جزئیات داخلی') }} <span data-field="extension"></span></h2>
+    <button type="button" class="detail-close" data-detail-close aria-label="{{ t('بستن') }}">✕</button>
   </div>
-</div>
+  <div class="detail-body">
+    <div class="detail-row"><span>{{ t('عنوان') }}</span><strong data-field="title"></strong></div>
+    <div class="detail-row"><span>{{ t('نام مسئول') }}</span><strong data-field="person"></strong></div>
+    <div class="detail-row"><span>{{ t('بخش') }}</span><strong data-field="department"></strong></div>
+    <div class="detail-row"><span>{{ t('محل استقرار') }}</span><strong data-field="location"></strong></div>
+    {% if can_see_contact() %}
+    <div class="detail-row"><span>{{ t('ایمیل') }}</span><strong data-field="email"></strong></div>
+    <div class="detail-row"><span>{{ t('موبایل سازمانی') }}</span><strong data-field="mobile"></strong></div>
+    {% endif %}
+    <div class="detail-row"><span>{{ t('ساعات کاری بخش') }}</span><strong data-field="hours"></strong></div>
+    <div class="detail-row"><span>{{ t('وضعیت حضور') }}</span><strong data-field="presence"></strong></div>
+    {% if show_phone_status %}
+    <div class="detail-row"><span>{{ t('وضعیت تلفن') }}</span><strong data-field="phonestatus"></strong></div>
+    <div class="detail-row"><span>{{ t('آخرین بررسی') }}</span><strong data-field="phonecheck"></strong></div>
+    {% endif %}
+    <div class="detail-row"><span>{{ t('توضیحات') }}</span><strong data-field="notes"></strong></div>
+    <div class="detail-row"><span>{{ t('تاریخ ایجاد') }}</span><strong data-field="created"></strong></div>
+    <div class="detail-row"><span>{{ t('تاریخ ویرایش') }}</span><strong data-field="updated"></strong></div>
+  </div>
+</dialog>
 
 {% endblock %}
