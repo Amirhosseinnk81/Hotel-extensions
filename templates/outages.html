@@ -1,35 +1,36 @@
 {% extends 'base.html' %}
-{% block title %}گزارش قطعی‌ها{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'outages' %}
+{% block title %}Outage Report{% endblock %}
 {% block content %}
 {% set csv_args = request.args.to_dict() %}
-<a href="{{ url_for('admin') }}" class="back-link no-print">← بازگشت به مدیریت</a>
+<a href="{{ url_for('admin') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
 <div class="mt-3 mb-4">
-  <h1 class="h2 mb-1">گزارش قطعی تلفن‌ها</h1>
-  <p class="text-muted mb-0">هر ردیف یک بار قطع‌شدنِ تأییدشدهٔ تلفن روی ایزابل است. قطعی‌های کوتاه‌تر از زمان تأیید ثبت نمی‌شوند.</p>
+  <h1 class="h2 mb-1">{{ t('گزارش قطعی تلفن‌ها') }}</h1>
+  <p class="text-muted mb-0">{{ t('هر ردیف یک بار قطع‌شدنِ تأییدشدهٔ تلفن روی ایزابل است. قطعی‌های کوتاه‌تر از زمان تأیید ثبت نمی‌شوند.') }}</p>
 </div>
 
 {% if not enabled %}
-  <div class="alert alert-warning">ثبت قطعی‌ها اکنون کار نمی‌کند (اتصال به PBX تنظیم نشده یا <code>PBX_OUTAGE_MONITOR=0</code> است). رکوردهای قبلی همچنان دیده می‌شوند.</div>
+  <div class="alert alert-warning">{{ t('ثبت قطعی‌ها اکنون کار نمی‌کند (اتصال به PBX تنظیم نشده یا') }} <code>PBX_OUTAGE_MONITOR=0</code> {{ t('است). رکوردهای قبلی همچنان دیده می‌شوند.') }}</div>
 {% endif %}
 
 <div id="outageStats" class="outage-stats mb-3">
   <div class="outage-stat {{ 'is-hot' if stats.offline_now }}">
-    <span class="outage-stat-label">آفلاین الان</span>
+    <span class="outage-stat-label">{{ t('آفلاین الان') }}</span>
     <strong class="outage-stat-value">{{ stats.offline_now }}</strong>
-    <small>قطعی‌های جاری</small>
+    <small>{{ t('قطعی‌های جاری') }}</small>
   </div>
   <div class="outage-stat">
-    <span class="outage-stat-label">قطعی‌های امروز</span>
+    <span class="outage-stat-label">{{ t('قطعی‌های امروز') }}</span>
     <strong class="outage-stat-value">{{ stats.today }}</strong>
-    <small>از نیمه‌شب به وقت محلی</small>
+    <small>{{ t('از نیمه‌شب به وقت محلی') }}</small>
   </div>
   <div class="outage-stat outage-stat-wide">
-    <span class="outage-stat-label">بدقول‌ترین داخلی‌ها (۳۰ روز اخیر)</span>
+    <span class="outage-stat-label">{{ t('بدقول‌ترین داخلی‌ها (۳۰ روز اخیر)') }}</span>
     <ol class="outage-worst">
       {% for w in stats.worst %}
-        <li><b dir="ltr">{{ w.extension }}</b> <span class="outage-worst-title">{{ w.title or '—' }}</span> <small>{{ w.count }} بار · جمعاً {{ w.duration }}</small></li>
+        <li><b dir="ltr">{{ w.extension }}</b> <span class="outage-worst-title">{{ w.title or '—' }}</span> <small>{{ w.count }} {{ t('بار · جمعاً') }} {{ w.duration }}</small></li>
       {% else %}
-        <li class="text-muted">در ۳۰ روز اخیر قطعی‌ای ثبت نشده است.</li>
+        <li class="text-muted">{{ t('در ۳۰ روز اخیر قطعی‌ای ثبت نشده است.') }}</li>
       {% endfor %}
     </ol>
   </div>
@@ -38,45 +39,45 @@
 <form class="search-card outage-filters mb-3 no-print" method="get">
   <div class="row g-2 align-items-end">
     <div class="col-lg-4">
-      <label class="form-label" for="o-q">جست‌وجو</label>
-      <input id="o-q" type="search" name="q" value="{{ filters.q }}" class="form-control" placeholder="داخلی، عنوان یا IP…" autocomplete="off" enterkeyhint="search">
+      <label class="form-label" for="o-q">{{ t('جست‌وجو') }}</label>
+      <input id="o-q" type="search" name="q" value="{{ (filters.q)|e }}" class="form-control" placeholder="{{ t('داخلی، عنوان یا IP…') }}" autocomplete="off" enterkeyhint="search">
     </div>
     <div class="col-6 col-lg-2">
-      <label class="form-label" for="o-from">از تاریخ</label>
-      <input id="o-from" type="date" name="from" value="{{ filters['from'].isoformat() if filters['from'] else '' }}" class="form-control">
+      <label class="form-label" for="o-from">{{ t('از تاریخ') }}</label>
+      <input id="o-from" type="date" name="from" value="{{ (filters['from'].isoformat() if filters['from'] else '')|e }}" class="form-control">
     </div>
     <div class="col-6 col-lg-2">
-      <label class="form-label" for="o-to">تا تاریخ</label>
-      <input id="o-to" type="date" name="to" value="{{ filters['to'].isoformat() if filters['to'] else '' }}" class="form-control">
+      <label class="form-label" for="o-to">{{ t('تا تاریخ') }}</label>
+      <input id="o-to" type="date" name="to" value="{{ (filters['to'].isoformat() if filters['to'] else '')|e }}" class="form-control">
     </div>
     <div class="col-lg-4">
       <div class="outage-chips">
-        <button type="button" class="range-chip" data-range="0">امروز</button>
-        <button type="button" class="range-chip" data-range="6">۷ روز</button>
-        <button type="button" class="range-chip" data-range="29">۳۰ روز</button>
-        <label class="outage-check"><input type="checkbox" name="ongoing" value="1" {% if filters.ongoing %}checked{% endif %}> فقط قطعی‌های جاری</label>
-        <button type="button" class="btn btn-link btn-sm p-0" id="outageClear">پاک کردن فیلترها</button>
+        <button type="button" class="range-chip" data-range="0">{{ t('امروز') }}</button>
+        <button type="button" class="range-chip" data-range="6">{{ t('۷ روز') }}</button>
+        <button type="button" class="range-chip" data-range="29">{{ t('۳۰ روز') }}</button>
+        <label class="outage-check"><input type="checkbox" name="ongoing" value="1" {% if filters.ongoing %}checked{% endif %}> {{ t('فقط قطعی‌های جاری') }}</label>
+        <button type="button" class="btn btn-link btn-sm p-0" id="outageClear">{{ t('پاک کردن فیلترها') }}</button>
       </div>
     </div>
   </div>
-  <small class="text-muted d-block mt-2">بازهٔ تاریخ بر اساس زمان شروع قطعی است.</small>
+  <small class="text-muted d-block mt-2">{{ t('بازهٔ تاریخ بر اساس زمان شروع قطعی است.') }}</small>
 </form>
 
 <div id="outageResults">
   <div class="results-bar mb-3">
     <div aria-live="polite">
-      <h5 class="mb-0">{{ total }} قطعی</h5>
+      <h5 class="mb-0">{{ total }} {{ t('قطعی') }}</h5>
       {% if total > rows|length %}
-        <span class="results-page-info">فقط {{ rows|length }} مورد آخر نمایش داده می‌شود؛ فایل CSV همهٔ موارد را دارد.</span>
+        <span class="results-page-info">{{ t('فقط') }} {{ rows|length }} {{ t('مورد آخر نمایش داده می‌شود؛ فایل CSV همهٔ موارد را دارد.') }}</span>
       {% endif %}
     </div>
-    <a class="btn btn-secondary btn-sm no-print" href="{{ url_for('outages_export', **csv_args) }}">⬇ خروجی CSV</a>
+    <a class="btn btn-secondary btn-sm no-print" href="{{ url_for('outages_export', **csv_args) }}">⬇ {{ t('خروجی CSV') }}</a>
   </div>
 
   <div class="table-responsive">
     <table class="table table-hover align-middle compact-table outage-table">
       <thead>
-        <tr><th>داخلی</th><th>عنوان</th><th>زمان قطع</th><th>زمان وصل</th><th>مدت</th></tr>
+        <tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان') }}</th><th>{{ t('زمان قطع') }}</th><th>{{ t('زمان وصل') }}</th><th>{{ t('مدت') }}</th></tr>
       </thead>
       <tbody>
         {% for o in rows %}
@@ -87,22 +88,22 @@
             <td class="nowrap"><bdi dir="ltr">{{ o.started_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi></td>
             <td class="nowrap">
               {% if st == 'ongoing' %}
-                <span class="outage-badge live"><span class="outage-dot" aria-hidden="true"></span>هنوز قطع است</span>
+                <span class="outage-badge live"><span class="outage-dot" aria-hidden="true"></span>{{ t('هنوز قطع است') }}</span>
               {% else %}
                 <bdi dir="ltr">{{ o.ended_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>
-                {% if st == 'stopped' %}<span class="outage-badge muted" title="داخلی غیرفعال، حذف یا از ایزابل پاک شد">پایان پایش</span>{% endif %}
+                {% if st == 'stopped' %}<span class="outage-badge muted" title="{{ t('داخلی غیرفعال، حذف یا از ایزابل پاک شد') }}">{{ t('پایان پایش') }}</span>{% endif %}
               {% endif %}
             </td>
             <td class="outage-duration nowrap" {% if st == 'ongoing' %}data-since="{{ iso_utc(o.started_at) }}"{% endif %}><bdi dir="ltr">{{ format_duration(o.duration_seconds) }}</bdi></td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="text-center py-4 text-muted">قطعی‌ای با این فیلترها ثبت نشده است.</td></tr>
+          <tr><td colspan="5" class="text-center py-4 text-muted">{{ t('قطعی‌ای با این فیلترها ثبت نشده است.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% if keep_days %}
-    <p class="text-muted small mt-2 mb-0">قطعی‌های تمام‌شده‌ی قدیمی‌تر از {{ keep_days }} روز خودکار پاک می‌شوند.</p>
+    <p class="text-muted small mt-2 mb-0">{{ t('قطعی‌های تمام‌شده‌ی قدیمی‌تر از') }} {{ keep_days }} {{ t('روز خودکار پاک می‌شوند.') }}</p>
   {% endif %}
 </div>
 {% endblock %}

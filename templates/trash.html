@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
-{% block title %}سطل بازیافت{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'trash' %}
+{% block title %}Recycle Bin{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">سطل بازیافت</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('سطل بازیافت') }}</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
 </div>
 
 <div class="panel p-0 overflow-hidden">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>داخلی</th><th>عنوان</th><th>بخش</th><th>تاریخ حذف</th><th></th></tr></thead>
+      <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان') }}</th><th>{{ t('بخش') }}</th><th>{{ t('تاریخ حذف') }}</th><th></th></tr></thead>
       <tbody>
         {% for e in entries %}
         <tr>
@@ -19,17 +20,17 @@
           <td><small>{{ (e.deleted_at | local_dt) if e.deleted_at else '—' }}</small></td>
           <td class="text-nowrap">
             <form action="{{ url_for('restore_extension', entry_id=e.id) }}" method="post" class="d-inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-success">بازگردانی</button>
+              <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+              <button class="btn btn-sm btn-outline-success">{{ t('بازگردانی') }}</button>
             </form>
-            <form action="{{ url_for('purge_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="این داخلی برای همیشه حذف شود؟ این کار قابل بازگشت نیست." data-confirm-title="حذف نهایی" data-confirm-label="بله، برای همیشه حذف کن">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger">حذف همیشگی</button>
+            <form action="{{ url_for('purge_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="{{ t('این داخلی برای همیشه حذف شود؟ این کار قابل بازگشت نیست.') }}" data-confirm-title="{{ t('حذف نهایی') }}" data-confirm-label="{{ t('بله، برای همیشه حذف کن') }}">
+              <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+              <button class="btn btn-sm btn-outline-danger">{{ t('حذف همیشگی') }}</button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-center py-4 text-muted">سطل بازیافت خالی است.</td></tr>
+        <tr><td colspan="5" class="text-center py-4 text-muted">{{ t('سطل بازیافت خالی است.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

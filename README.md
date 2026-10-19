@@ -77,3 +77,11 @@ python -m unittest discover -s tests -t .
 ## گزارش PDF
 
 در پنل مدیریت، از بخش «خروجی گرفتن» می‌توانید گزارش PDF همه بخش‌ها یا یک بخش مشخص را دانلود کنید. گزارش همه بخش‌ها، هر بخش را در صفحه‌ای جدا با جدول داخلی‌های همان بخش نمایش می‌دهد. فونت به این ترتیب پیدا می‌شود: مسیر `PDF_FONT_PATH` (اگر ست شده)، هر فایل `.ttf` داخل پوشهٔ `fonts` کنار `app.py`، `Tahoma` در ویندوز، و در لینوکس به‌ترتیب Vazirmatn، Noto Naskh Arabic و DejaVu Sans. اگر هیچ‌کدام پیدا نشود، پیام خطای واضح نمایش داده می‌شود. برای بهترین ظاهر، فایل `Vazirmatn-Regular.ttf` را در پوشهٔ `fonts` بگذارید.
+
+## Language and themes
+
+- The UI is available in Persian (default) and English; use the language button in the sidebar (admin) or the header (public pages). The choice is stored in the `hp_lang` cookie.
+- Persian is the source text everywhere. English strings live in `i18n.py`; `tests/test_i18n.py` fails if a template or JavaScript string has no English translation.
+- Three themes: dark (default), light and gold; the choice is stored per browser.
+- All CSS, fonts and Bootstrap files are served from `static/vendor`, so the pages work without Internet access.
+- Exports (PDF/Excel/CSV) keep their Persian headings.

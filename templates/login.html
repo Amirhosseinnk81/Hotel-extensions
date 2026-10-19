@@ -1,22 +1,22 @@
 {% extends 'base.html' %}
-{% block title %}ورود مدیریت{% endblock %}
+{% block title %}Admin Login{% endblock %}
 {% block content %}
 <div class="login-box">
   <div class="login-head">
     <span class="login-mark" aria-hidden="true">✦</span>
     <div>
-      <p class="eyebrow">پنل مدیریت</p>
-      <h2>خوش آمدید</h2>
+      <p class="eyebrow">{{ t('پنل مدیریت') }}</p>
+      <h2>{{ t('خوش آمدید') }}</h2>
     </div>
   </div>
-  <p class="text-muted">برای مدیریت دفترچه داخلی‌ها وارد شوید.</p>
+  <p class="text-muted">{{ t('برای مدیریت دفترچه داخلی‌ها وارد شوید.') }}</p>
   <form method="post" data-loading>
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="form-label" for="username">نام کاربری</label>
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <label class="form-label" for="username">{{ t('نام کاربری') }}</label>
     <input class="form-control mb-3" id="username" name="username" autocomplete="username" required autofocus>
-    <label class="form-label" for="password">رمز عبور</label>
+    <label class="form-label" for="password">{{ t('رمز عبور') }}</label>
     <input type="password" class="form-control mb-4" id="password" name="password" autocomplete="current-password" required>
-    <button type="submit" class="btn btn-primary w-100" data-loading-text="در حال ورود...">ورود به پنل</button>
+    <button type="submit" class="btn btn-primary w-100" data-loading-text="{{ t('در حال ورود...') }}">{{ t('ورود به پنل') }}</button>
   </form>
 </div>
 {% endblock %}

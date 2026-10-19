@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
-{% block title %}لاگ فعالیت‌ها{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'activity' %}
+{% block title %}Activity Log{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">لاگ فعالیت‌ها</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('لاگ فعالیت‌ها') }}</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
 </div>
 
 <div class="panel p-0 overflow-hidden">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead>
-        <tr><th>زمان</th><th>کاربر</th><th>عملیات</th><th>مورد</th><th>جزئیات</th></tr>
+        <tr><th>{{ t('زمان') }}</th><th>{{ t('کاربر') }}</th><th>{{ t('عملیات') }}</th><th>{{ t('مورد') }}</th><th>{{ t('جزئیات') }}</th></tr>
       </thead>
       <tbody>
         {% for log in logs %}
@@ -19,15 +20,15 @@
           <td>{{ log.actor }}</td>
           <td>
             <span class="badge log-action log-action-{{ log.action }}">
-              {{ {'created':'ایجاد', 'updated':'ویرایش', 'deleted':'حذف', 'imported':'ایمپورت', 'exported':'خروجی'}.get(log.action, log.action) }}
+              {{ {'created':t('ایجاد'), 'updated':t('ویرایش'), 'deleted':t('حذف'), 'imported':t('ایمپورت'), 'exported':t('خروجی')}.get(log.action, log.action) }}
             </span>
-            <small class="text-muted">{{ {'extension':'داخلی', 'department':'بخش', 'user':'کاربر مدیر', 'backup':'بکاپ'}.get(log.entity_type, log.entity_type) }}</small>
+            <small class="text-muted">{{ {'extension':t('داخلی'), 'department':t('بخش'), 'user':t('کاربر مدیر'), 'backup':t('بکاپ')}.get(log.entity_type, log.entity_type) }}</small>
           </td>
           <td>{{ log.entity_label }}</td>
           <td class="text-muted"><small>{{ log.details or '—' }}</small></td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-center py-4 text-muted">هنوز فعالیتی ثبت نشده است.</td></tr>
+        <tr><td colspan="5" class="text-center py-4 text-muted">{{ t('هنوز فعالیتی ثبت نشده است.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

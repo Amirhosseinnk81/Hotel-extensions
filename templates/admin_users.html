@@ -1,38 +1,39 @@
 {% extends 'base.html' %}
-{% block title %}مدیریت ادمین‌ها{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'admins' %}
+{% block title %}Manage Admins{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">مدیران سامانه</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('مدیران سامانه') }}</h1></div>
+  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
 </div>
 
 <div class="action-card mb-4" style="max-width:520px">
-  <div class="action-card-head"><span class="action-icon">＋</span><h6>افزودن مدیر جدید</h6></div>
-  <p class="action-desc">کاربر جدید در اولین ورود موظف به تغییر رمز عبور است.</p>
+  <div class="action-card-head"><span class="action-icon">＋</span><h6>{{ t('افزودن مدیر جدید') }}</h6></div>
+  <p class="action-desc">{{ t('کاربر جدید در اولین ورود موظف به تغییر رمز عبور است.') }}</p>
   <form action="{{ url_for('create_user') }}" method="post" class="d-flex flex-column gap-2">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input name="username" class="form-control form-control-sm" placeholder="نام کاربری (انگلیسی)" required>
-    <input name="display_name" class="form-control form-control-sm" placeholder="نام نمایشی" required>
-    <input type="password" name="password" class="form-control form-control-sm" placeholder="رمز عبور موقت (حداقل ۶ کاراکتر)" minlength="6" required>
-    <button class="btn btn-outline-primary btn-sm">افزودن مدیر</button>
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <input name="username" class="form-control form-control-sm" placeholder="{{ t('نام کاربری (انگلیسی)') }}" required>
+    <input name="display_name" class="form-control form-control-sm" placeholder="{{ t('نام نمایشی') }}" required>
+    <input type="password" name="password" class="form-control form-control-sm" placeholder="{{ t('رمز عبور موقت (حداقل ۶ کاراکتر)') }}" minlength="6" required>
+    <button class="btn btn-outline-primary btn-sm">{{ t('افزودن مدیر') }}</button>
   </form>
 </div>
 
 <div class="panel p-0 overflow-hidden">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>نام کاربری</th><th>نام نمایشی</th><th>وضعیت</th><th></th></tr></thead>
+      <thead><tr><th>{{ t('نام کاربری') }}</th><th>{{ t('نام نمایشی') }}</th><th>{{ t('وضعیت') }}</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
           <td class="fw-bold">{{ u.username }}</td>
-          <td>{{ u.display_name }}{% if u.id == current_user.id %} <small class="text-muted">(خودتان)</small>{% endif %}</td>
-          <td>{% if u.must_change_password %}<span class="badge text-bg-warning">در انتظار تغییر رمز</span>{% else %}<span class="badge text-bg-success">فعال</span>{% endif %}</td>
+          <td>{{ u.display_name }}{% if u.id == current_user.id %} <small class="text-muted">{{ t('(خودتان)') }}</small>{% endif %}</td>
+          <td>{% if u.must_change_password %}<span class="badge text-bg-warning">{{ t('در انتظار تغییر رمز') }}</span>{% else %}<span class="badge text-bg-success">{{ t('فعال') }}</span>{% endif %}</td>
           <td class="text-nowrap">
             {% if u.id != current_user.id %}
-            <form action="{{ url_for('delete_user', user_id=u.id) }}" method="post" class="d-inline" data-confirm="این مدیر حذف شود؟" data-confirm-title="حذف مدیر" data-confirm-label="بله، حذف کن">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger">حذف</button>
+            <form action="{{ url_for('delete_user', user_id=u.id) }}" method="post" class="d-inline" data-confirm="{{ t('این مدیر حذف شود؟') }}" data-confirm-title="{{ t('حذف مدیر') }}" data-confirm-label="{{ t('بله، حذف کن') }}">
+              <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+              <button class="btn btn-sm btn-outline-danger">{{ t('حذف') }}</button>
             </form>
             {% endif %}
           </td>

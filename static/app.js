@@ -8,6 +8,15 @@
   var ADMIN_VIEW_KEY = 'hp_admin_view';
   var bulkRefresh = null;  // set by initBulkSelect; the admin list calls it after its rows change
 
+  /* ---------------- Translation (English UI only; Persian is the source text) ---------------- */
+  var I18N = window.HP_I18N || null;
+  function tr(text) {
+    if (!I18N || !text) return text;
+    var m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text);
+    var hit = I18N[m[2].replace(/[\u200c\u200e\u200f]/g, '')];
+    return hit === undefined ? text : m[1] + hit + m[3];
+  }
+
   /* ---------------- Small helpers ---------------- */
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
@@ -46,7 +55,7 @@
     item.appendChild(make('div', 'toast-body', message));
     var close = make('button', 'toast-close', '✕');
     close.type = 'button';
-    close.setAttribute('aria-label', 'بستن');
+    close.setAttribute('aria-label', tr('بستن'));
     close.addEventListener('click', function () { removeToast(item); });
     item.appendChild(close);
 
@@ -89,13 +98,13 @@
   function openConfirm(opts, onOk) {
     var root = $('#confirmDialog');
     if (!root) {
-      if (window.confirm(opts.message || 'ادامه می‌دهید؟')) onOk();
+      if (window.confirm(opts.message || tr('ادامه می‌دهید؟'))) onOk();
       return;
     }
-    $('#confirmTitle', root).textContent = opts.title || 'تأیید عملیات';
+    $('#confirmTitle', root).textContent = opts.title || tr('تأیید عملیات');
     $('#confirmMessage', root).textContent = opts.message || '';
     var okBtn = $('[data-modal-confirm]', root);
-    okBtn.textContent = opts.okLabel || 'بله، ادامه بده';
+    okBtn.textContent = opts.okLabel || tr('بله، ادامه بده');
     okBtn.className = 'btn ' + (opts.tone === 'primary' ? 'btn-primary' : 'btn-danger');
     root.setAttribute('data-tone', opts.tone === 'primary' ? 'primary' : 'danger');
 
@@ -205,7 +214,7 @@
       form._submitting = true;
       var btn = submitter && submitter.hasAttribute('data-loading-text') ? submitter
         : form.querySelector('[data-loading-text]') || submitter || form.querySelector('button[type="submit"], button:not([type])');
-      var text = (btn && btn.getAttribute('data-loading-text')) || form.getAttribute('data-loading-text') || 'در حال ارسال...';
+      var text = (btn && btn.getAttribute('data-loading-text')) || form.getAttribute('data-loading-text') || tr('در حال ارسال...');
       startLoading(btn, text);
     });
 
@@ -220,6 +229,7 @@
   /* ---------------- Theme ---------------- */
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-bs-theme', theme === 'dark' ? 'dark' : 'light');
     try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
     $$('.theme-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.themeValue === theme);
@@ -227,8 +237,9 @@
   }
 
   function initTheme() {
-    var current = 'light';
-    try { current = localStorage.getItem(THEME_KEY) || 'light'; } catch (e) {}
+    var current = 'dark';
+    try { current = localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) {}
+    if (['light', 'dark', 'gold'].indexOf(current) === -1) current = 'dark';
     applyTheme(current);
     $$('.theme-btn').forEach(function (btn) {
       btn.addEventListener('click', function () { applyTheme(btn.dataset.themeValue); });
@@ -388,7 +399,7 @@
       var filtering = phoneFilter !== 'all' || favs !== null;
       if (info) {
         if (filtering && total) {
-          info.textContent = 'نمایش ' + shown + ' از ' + total + ' مورد این صفحه';
+          info.textContent = tr('نمایش ') + shown + tr(' از ') + total + tr(' مورد این صفحه');
           info.hidden = false;
         } else {
           info.hidden = true;
@@ -464,12 +475,12 @@
         box.appendChild(make('dd', null, value));
         list.appendChild(box);
       }
-      add('بخش', d.department);
-      add('نام مسئول', d.person);
-      add('محل', d.location);
-      add('وضعیت داخلی', d.active === '1' ? 'فعال' : (d.active === '0' ? 'غیرفعال' : ''));
-      add('توضیحات', d.notes);
-      if (!list.children.length) add('جزئیات', 'اطلاعات بیشتری ثبت نشده است.');
+      add(tr('بخش'), d.department);
+      add(tr('نام مسئول'), d.person);
+      add(tr('محل'), d.location);
+      add(tr('وضعیت داخلی'), d.active === '1' ? tr('فعال') : (d.active === '0' ? tr('غیرفعال') : ''));
+      add(tr('توضیحات'), d.notes);
+      if (!list.children.length) add(tr('جزئیات'), tr('اطلاعات بیشتری ثبت نشده است.'));
       cell.appendChild(list);
       detail.appendChild(cell);
       row.parentNode.insertBefore(detail, row.nextSibling);
@@ -571,17 +582,17 @@
     }
 
     function tipFor(info, data) {
-      var lines = [info.label || ''];
+      var lines = [tr(info.label || '')];
       var stamp = fmtTime(info.last_sync || data.last_sync);
-      if (stamp) lines.push('آخرین بررسی: ' + stamp);
-      if (typeof info.latency_ms === 'number' && info.status === 'online') lines.push('تأخیر: ' + info.latency_ms + ' ms');
+      if (stamp) lines.push(tr('آخرین بررسی: ') + stamp);
+      if (typeof info.latency_ms === 'number' && info.status === 'online') lines.push(tr('تأخیر: ') + info.latency_ms + ' ms');
       return lines.join('\n');
     }
 
     function paint(pill, info, data) {
       var state = STATES.indexOf(info.status) !== -1 ? info.status : 'unknown';
       var className = 'phone-pill ' + state + (info.slow ? ' slow' : '');
-      var text = info.label || '';
+      var text = tr(info.label || '');
       var tip = tipFor(info, data);
       if (pill.className !== className) pill.className = className;
       if (pill.textContent !== text) pill.textContent = text;
@@ -627,7 +638,7 @@
           col.appendChild(pill);
         }
         card.dataset.phoneState = paint(pill, info, data);
-        card.dataset.phonestatus = info.label || '';
+        card.dataset.phonestatus = tr(info.label || '');
         card.dataset.phonecheck = fmtTime(info.last_sync || data.last_sync);
       });
       rows.forEach(function (row) {
@@ -647,7 +658,7 @@
           cell.appendChild(pill);
         }
         row.dataset.phoneState = paint(pill, info, data);
-        row.dataset.phonestatus = info.label || '';
+        row.dataset.phonestatus = tr(info.label || '');
       });
       if (directory.apply) directory.apply();
     }
@@ -663,12 +674,12 @@
           failures = 0;
           if (data && data.statuses) apply(data);
           var stamp = fmtTime(data && data.last_sync);
-          setLive('ok', 'بروزرسانی زنده' + (stamp ? ' · آخرین همگام‌سازی با PBX: ' + stamp : ''));
+          setLive('ok', tr('بروزرسانی زنده') + (stamp ? tr(' · آخرین همگام‌سازی با PBX: ') + stamp : ''));
         })
         .catch(function () {
           failures++;
           // keep the badges that are showing; only tell the user after a second miss
-          if (failures >= 2) setLive('error', 'ارتباط با سرور برقرار نیست — نمایش آخرین وضعیت شناخته‌شده');
+          if (failures >= 2) setLive('error', tr('ارتباط با سرور برقرار نیست — نمایش آخرین وضعیت شناخته‌شده'));
         })
         .then(function () {
           inFlight = false;
@@ -698,7 +709,7 @@
         if (node) node.textContent = card.dataset[key] || '—';
       });
       var presenceEl = $('[data-field="presence"]', modalEl);
-      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? 'حاضر' : 'خارج از شیفت';
+      if (presenceEl) presenceEl.textContent = card.dataset.present === '1' ? tr('حاضر') : tr('خارج از شیفت');
       modal.show();
     });
   }
@@ -834,9 +845,9 @@
       var form = document.getElementById('tileDeleteForm');
       if (!form || !btn.dataset.deleteUrl) return;
       openConfirm({
-        message: 'این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید.',
-        title: 'انتقال به سطل بازیافت',
-        okLabel: 'بله، منتقل کن'
+        message: tr('این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید.'),
+        title: tr('انتقال به سطل بازیافت'),
+        okLabel: tr('بله، منتقل کن')
       }, function () {
         form.action = btn.dataset.deleteUrl;
         form.submit();
@@ -1034,8 +1045,8 @@
       var on = isOn();
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', String(on));
-      var mode = !on ? 'خاموش' : (systemReady() ? 'روشن — اعلان ویندوز' : 'روشن — فقط داخل همین صفحه');
-      btn.title = 'هشدار قطعی تلفن‌ها (' + mode + ')';
+      var mode = !on ? tr('خاموش') : (systemReady() ? tr('روشن — اعلان ویندوز') : tr('روشن — فقط داخل همین صفحه'));
+      btn.title = tr('هشدار قطعی تلفن‌ها (') + mode + ')';
     }
 
     function show(alert) {
@@ -1085,27 +1096,27 @@
         start();
       };
       if (!hasApi) {
-        toast('این مرورگر اعلان سیستم را پشتیبانی نمی‌کند؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 12000 });
+        toast(tr('این مرورگر اعلان سیستم را پشتیبانی نمی‌کند؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.'), 'warning', { duration: 12000 });
         return finish();
       }
       if (!secure) {
-        toast('مرورگر روی آدرس http (غیر از localhost) اعلان ویندوز نمی‌دهد. برای اعلان، سایت را با HTTPS یا از روی localhost باز کنید. فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 15000 });
+        toast(tr('مرورگر روی آدرس http (غیر از localhost) اعلان ویندوز نمی‌دهد. برای اعلان، سایت را با HTTPS یا از روی localhost باز کنید. فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.'), 'warning', { duration: 15000 });
         return finish();
       }
       if (Notification.permission === 'granted') {
-        toast('هشدار قطعی تلفن‌ها روشن شد.', 'success');
+        toast(tr('هشدار قطعی تلفن‌ها روشن شد.'), 'success');
         return finish();
       }
       if (Notification.permission === 'denied') {
-        toast('اعلان برای این سایت در مرورگر مسدود است (قفل کنار آدرس ← Notifications ← Allow). فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 15000 });
+        toast(tr('اعلان برای این سایت در مرورگر مسدود است (قفل کنار آدرس ← Notifications ← Allow). فعلاً هشدار فقط داخل همین صفحه نشان داده می‌شود.'), 'warning', { duration: 15000 });
         return finish();
       }
       var answered = false;
       var done = function (permission) {
         if (answered) return;
         answered = true;
-        if (permission === 'granted') toast('هشدار قطعی تلفن‌ها روشن شد.', 'success');
-        else toast('اجازهٔ اعلان داده نشد؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.', 'warning', { duration: 12000 });
+        if (permission === 'granted') toast(tr('هشدار قطعی تلفن‌ها روشن شد.'), 'success');
+        else toast(tr('اجازهٔ اعلان داده نشد؛ هشدار فقط داخل همین صفحه نشان داده می‌شود.'), 'warning', { duration: 12000 });
         finish();
       };
       var request = Notification.requestPermission(done);   // old browsers use the callback, new ones the promise
@@ -1117,7 +1128,7 @@
         setOn(false);
         clearInterval(timer);
         paint();
-        toast('هشدار قطعی تلفن‌ها خاموش شد.', 'info');
+        toast(tr('هشدار قطعی تلفن‌ها خاموش شد.'), 'info');
       } else {
         turnOn();
       }

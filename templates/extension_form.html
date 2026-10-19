@@ -1,81 +1,82 @@
 {% extends 'base.html' %}
-{% block title %}{{ 'ویرایش' if entry else 'افزودن' }} داخلی{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'extensions' %}
+{% block title %}{{ 'Edit' if entry else 'Add' }} Extension{% endblock %}
 {% block content %}
 {% set has_network = entry and (entry.mac or entry.phone_model or entry.reg_status or entry.last_ip or entry.user_agent) %}
 <div class="form-page">
-  <a href="{{ url_for('admin') }}" class="back-link">← بازگشت به مدیریت</a>
-  <h1 class="h2 mt-3">{{ 'ویرایش' if entry else 'ثبت' }} داخلی</h1>
+  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
+  <h1 class="h2 mt-3">{{ t('ویرایش') if entry else t('ثبت') }} {{ t('داخلی') }}</h1>
   <form method="post" class="panel mt-4" data-loading>
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
 
     <section class="form-section">
       <header class="form-section-head">
         <span class="form-section-icon" aria-hidden="true">☎</span>
         <div>
-          <h2>اطلاعات ضروری اتاق و داخلی</h2>
-          <p>فیلدهای ستاره‌دار الزامی هستند.</p>
+          <h2>{{ t('اطلاعات ضروری اتاق و داخلی') }}</h2>
+          <p>{{ t('فیلدهای ستاره‌دار الزامی هستند.') }}</p>
         </div>
       </header>
       <div class="row g-3">
         <div class="col-md-4">
-          <label class="form-label" for="f-extension">شماره داخلی <span class="req">*</span></label>
-          <input id="f-extension" name="extension" value="{{ entry.extension if entry else '' }}" class="form-control" dir="ltr" inputmode="numeric" required>
+          <label class="form-label" for="f-extension">{{ t('شماره داخلی') }} <span class="req">*</span></label>
+          <input id="f-extension" name="extension" value="{{ (entry.extension if entry else '')|e }}" class="form-control" dir="ltr" inputmode="numeric" required>
         </div>
         <div class="col-md-8">
-          <label class="form-label" for="f-title">عنوان / سمت <span class="req">*</span></label>
-          <input id="f-title" name="title" value="{{ entry.title if entry else '' }}" class="form-control" placeholder="مثلاً پذیرش اصلی" required>
+          <label class="form-label" for="f-title">{{ t('عنوان / سمت') }} <span class="req">*</span></label>
+          <input id="f-title" name="title" value="{{ (entry.title if entry else '')|e }}" class="form-control" placeholder="{{ t('مثلاً پذیرش اصلی') }}" required>
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-person">نام مسئول</label>
-          <input id="f-person" name="person_name" value="{{ entry.person_name if entry and entry.person_name else '' }}" class="form-control">
+          <label class="form-label" for="f-person">{{ t('نام مسئول') }}</label>
+          <input id="f-person" name="person_name" value="{{ (entry.person_name if entry and entry.person_name else '')|e }}" class="form-control">
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-department">بخش</label>
+          <label class="form-label" for="f-department">{{ t('بخش') }}</label>
           <select id="f-department" name="department_id" class="form-select">
-            <option value="">انتخاب نشده</option>
+            <option value="">{{ t('انتخاب نشده') }}</option>
             {% for d in departments %}
-              <option value="{{ d.id }}" {% if entry and entry.department_id == d.id %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
+              <option value="{{ (d.id)|e }}" {% if entry and entry.department_id == d.id %}selected{% endif %}>{{ dept_icon(d.name) }} {{ d.name }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-location">محل استقرار</label>
-          <input id="f-location" name="location" value="{{ entry.location if entry and entry.location else '' }}" class="form-control" placeholder="لابی، طبقه ۲، …">
+          <label class="form-label" for="f-location">{{ t('محل استقرار') }}</label>
+          <input id="f-location" name="location" value="{{ (entry.location if entry and entry.location else '')|e }}" class="form-control" placeholder="{{ t('لابی، طبقه ۲، …') }}">
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-kind">نوع داخلی</label>
+          <label class="form-label" for="f-kind">{{ t('نوع داخلی') }}</label>
           <select id="f-kind" name="kind" class="form-select">
-            <option value="auto" {% if not entry %}selected{% endif %}>خودکار (طبق الگوی شماره اتاق‌ها)</option>
+            <option value="auto" {% if not entry %}selected{% endif %}>{{ t('خودکار (طبق الگوی شماره اتاق‌ها)') }}</option>
             {% for key, label in kind_labels.items() %}
-              <option value="{{ key }}" {% if entry and entry.kind == key %}selected{% endif %}>{{ label }}</option>
+              <option value="{{ (key)|e }}" {% if entry and entry.kind == key %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <small class="field-hint">«اتاق مهمان» و «در انتظار بررسی» برای پرسنل نمایش داده نمی‌شوند.</small>
+          <small class="field-hint">{{ t('«اتاق مهمان» و «در انتظار بررسی» برای پرسنل نمایش داده نمی‌شوند.') }}</small>
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-email">ایمیل</label>
-          <input id="f-email" type="email" name="email" value="{{ entry.email if entry and entry.email else '' }}" class="form-control" placeholder="name@arazhotels.com" dir="ltr">
+          <label class="form-label" for="f-email">{{ t('ایمیل') }}</label>
+          <input id="f-email" type="email" name="email" value="{{ (entry.email if entry and entry.email else '')|e }}" class="form-control" placeholder="name@arazhotels.com" dir="ltr">
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-mobile">موبایل سازمانی</label>
-          <input id="f-mobile" name="mobile" value="{{ entry.mobile if entry and entry.mobile else '' }}" class="form-control" placeholder="09xxxxxxxxx" dir="ltr">
+          <label class="form-label" for="f-mobile">{{ t('موبایل سازمانی') }}</label>
+          <input id="f-mobile" name="mobile" value="{{ (entry.mobile if entry and entry.mobile else '')|e }}" class="form-control" placeholder="09xxxxxxxxx" dir="ltr">
         </div>
         <div class="col-12">
           <div class="switch-row">
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="is_active" id="active" {% if not entry or entry.is_active %}checked{% endif %}>
-              <label class="form-check-label" for="active">داخلی فعال است</label>
+              <label class="form-check-label" for="active">{{ t('داخلی فعال است') }}</label>
             </div>
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" name="is_present" id="present" {% if entry and entry.is_present %}checked{% endif %}>
-              <label class="form-check-label" for="present">هم‌اکنون حاضر است</label>
+              <label class="form-check-label" for="present">{{ t('هم‌اکنون حاضر است') }}</label>
             </div>
           </div>
-          <small class="field-hint">فیلد «حضور» فعلاً به‌صورت دستی تنظیم می‌شود و آماده اتصال به سیستم حضور و غیاب در آینده است.</small>
+          <small class="field-hint">{{ t('فیلد «حضور» فعلاً به‌صورت دستی تنظیم می‌شود و آماده اتصال به سیستم حضور و غیاب در آینده است.') }}</small>
         </div>
         <div class="col-12">
-          <label class="form-label" for="f-notes">یادداشت</label>
-          <textarea id="f-notes" name="notes" class="form-control" rows="3">{{ entry.notes if entry and entry.notes else '' }}</textarea>
+          <label class="form-label" for="f-notes">{{ t('یادداشت') }}</label>
+          <textarea id="f-notes" name="notes" class="form-control" rows="3">{{ (entry.notes if entry and entry.notes else '')|e }}</textarea>
         </div>
       </div>
     </section>
@@ -84,31 +85,31 @@
       <summary>
         <span class="form-section-icon" aria-hidden="true">⌗</span>
         <span class="summary-text">
-          <strong>تنظیمات شبکه و سخت‌افزار</strong>
-          <small>اختیاری — MAC و مدل تلفن</small>
+          <strong>{{ t('تنظیمات شبکه و سخت‌افزار') }}</strong>
+          <small>{{ t('اختیاری — MAC و مدل تلفن') }}</small>
         </span>
-        <span class="optional-badge">اختیاری</span>
+        <span class="optional-badge">{{ t('اختیاری') }}</span>
         <span class="summary-chevron" aria-hidden="true"></span>
       </summary>
       <div class="row g-3 mt-1">
         <div class="col-md-6">
-          <label class="form-label" for="f-mac">MAC تلفن</label>
-          <input id="f-mac" name="mac" value="{{ entry.mac if entry and entry.mac else '' }}" class="form-control" placeholder="00:15:65:AA:BB:CC" dir="ltr" autocomplete="off">
+          <label class="form-label" for="f-mac">{{ t('MAC تلفن') }}</label>
+          <input id="f-mac" name="mac" value="{{ (entry.mac if entry and entry.mac else '')|e }}" class="form-control" placeholder="00:15:65:AA:BB:CC" dir="ltr" autocomplete="off">
         </div>
         <div class="col-md-6">
-          <label class="form-label" for="f-model">مدل تلفن</label>
-          <input id="f-model" name="phone_model" value="{{ entry.phone_model if entry and entry.phone_model else '' }}" class="form-control" placeholder="Yealink T46U" dir="ltr" autocomplete="off">
+          <label class="form-label" for="f-model">{{ t('مدل تلفن') }}</label>
+          <input id="f-model" name="phone_model" value="{{ (entry.phone_model if entry and entry.phone_model else '')|e }}" class="form-control" placeholder="Yealink T46U" dir="ltr" autocomplete="off">
         </div>
         {% if entry and (entry.reg_status or entry.last_ip or entry.user_agent) %}
         <div class="col-12">
           <div class="live-info small">
-            <strong>اطلاعات زندهٔ تلفن (فقط‌خواندنی، از ایزابل خوانده می‌شود)</strong>
+            <strong>{{ t('اطلاعات زندهٔ تلفن (فقط‌خواندنی، از ایزابل خوانده می‌شود)') }}</strong>
             <div class="mt-1">
               {% set ps = phone_status(entry) %}
               {% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% endif %}
               {% if entry.last_ip %}<span class="ms-2">IP: <span dir="ltr">{{ entry.last_ip }}</span></span>{% endif %}
-              {% if entry.rtt_ms is not none %}<span class="ms-2">تأخیر: <span dir="ltr">{{ entry.rtt_ms }} ms</span></span>{% endif %}
-              {% if entry.last_seen_at %}<span class="ms-2">آخرین بار دیده‌شده: {{ entry.last_seen_at | local_dt }}</span>{% endif %}
+              {% if entry.rtt_ms is not none %}<span class="ms-2">{{ t('تأخیر:') }} <span dir="ltr">{{ entry.rtt_ms }} ms</span></span>{% endif %}
+              {% if entry.last_seen_at %}<span class="ms-2">{{ t('آخرین بار دیده‌شده:') }} {{ entry.last_seen_at | local_dt }}</span>{% endif %}
               {% if entry.user_agent %}<div class="mt-1 text-muted" dir="ltr">{{ entry.user_agent }}</div>{% endif %}
             </div>
           </div>
@@ -118,8 +119,8 @@
     </details>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary px-4" data-loading-text="در حال ذخیره...">ذخیره اطلاعات</button>
-      <a href="{{ url_for('admin') }}" class="btn btn-secondary">انصراف</a>
+      <button type="submit" class="btn btn-primary px-4" data-loading-text="{{ t('در حال ذخیره...') }}">{{ t('ذخیره اطلاعات') }}</button>
+      <a href="{{ url_for('admin') }}" class="btn btn-secondary">{{ t('انصراف') }}</a>
     </div>
   </form>
 </div>

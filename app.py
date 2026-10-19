@@ -11,13 +11,14 @@ import tempfile
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from logging.handlers import RotatingFileHandler
 
 
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
@@ -38,7 +39,7 @@ from sqlalchemy import func, or_
 from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
-import envfile
+import i18n
 import outage_alerts
 import outage_monitor
 import outage_report
@@ -47,9 +48,6 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-# Settings from the .env file next to this file (variables already set in the system win; PBX_DOTENV=0 turns it off).
-# Must stay above the first os.getenv below, because some settings are read at import time.
-envfile.load_dotenv(envfile.env_path(BASE_DIR))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
 ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
@@ -1121,6 +1119,53 @@ def create_app():
     app.jinja_env.globals['pbx_state'] = pbx_sync_state
     app.jinja_env.globals['data_version'] = lambda: _data_version
     app.jinja_env.filters['local_dt'] = format_local_datetime
+
+    # ---- UI language (Persian is the source text; English is looked up in i18n.py) ----
+    def current_lang():
+        if not has_request_context():
+            return i18n.DEFAULT_LANG
+        lang = getattr(g, 'lang', None)
+        return lang if lang in i18n.LANGS else i18n.DEFAULT_LANG
+
+    def ui_translate(text):
+        return i18n.translate(text, current_lang())
+
+    def finalize_output(value):
+        # Every {{ ... }} that renders a plain Persian string is translated in English mode.
+        # Markup (e.g. |e) is left alone, which is how input values keep their stored text.
+        if type(value) is str and value and current_lang() == 'en':
+            return i18n.translate(value, 'en')
+        return value
+
+    def footer_year():
+        now = datetime.now(LOCAL_TZ)
+        return i18n.jalali_year(now.year, now.month, now.day) if current_lang() == 'fa' else now.year
+
+    app.jinja_env.finalize = finalize_output
+    app.jinja_env.globals['t'] = ui_translate
+    app.jinja_env.globals['current_lang'] = current_lang
+    app.jinja_env.globals['js_i18n'] = i18n.js_dictionary
+    app.jinja_env.globals['footer_year'] = footer_year
+
+    @app.before_request
+    def pick_language():
+        lang = request.cookies.get('hp_lang')
+        g.lang = lang if lang in i18n.LANGS else i18n.DEFAULT_LANG
+
+    @app.route('/lang/<code>')
+    def set_language(code):
+        if code not in i18n.LANGS:
+            abort(404)
+        target = '/'
+        referrer = urlparse(request.referrer or '')
+        if referrer.netloc == request.host:  # same-site only, never an open redirect
+            target = referrer.path + ('?' + referrer.query if referrer.query else '')
+        if not target.startswith('/') or target.startswith('//'):
+            target = '/'
+        response = redirect(target)
+        response.set_cookie('hp_lang', code, max_age=365 * 24 * 3600, samesite='Lax',
+                            secure=app.config.get('SESSION_COOKIE_SECURE', False))
+        return response
     os.makedirs(IMPORT_TMP_DIR, exist_ok=True)
 
     @app.before_request
@@ -1534,7 +1579,7 @@ def create_app():
     @app.route(f'/{admin_prefix}/extensions/delete-all', methods=['POST'])
     @login_required
     def delete_all_extensions():
-        if request.form.get('confirmation', '').strip() != 'پاک کن':
+        if request.form.get('confirmation', '').strip().lower() not in ('پاک کن', 'clear'):
             flash('برای پاک‌سازی، عبارت «پاک کن» را دقیق وارد کنید.', 'danger')
             return redirect(url_for('admin'))
         count = Extension.query.filter_by(is_deleted=False).update({Extension.is_deleted: True, Extension.deleted_at: datetime.utcnow()}, synchronize_session=False)

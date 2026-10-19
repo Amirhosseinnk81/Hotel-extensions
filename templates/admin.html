@@ -1,91 +1,92 @@
 {% extends 'base.html' %}
-{% block title %}مدیریت داخلی‌ها{% endblock %}
+{% set shell = 'admin' %}{% set nav = 'extensions' %}
+{% block title %}Manage Extensions{% endblock %}
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-  <div><p class="eyebrow mb-1">پنل مدیریت</p><h1 class="h2 mb-0">داخلی‌های هتل</h1></div>
-  <a href="{{ url_for('create_extension') }}" class="btn btn-primary">+ ثبت داخلی جدید</a>
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('داخلی‌های هتل') }}</h1></div>
+  <a href="{{ url_for('create_extension') }}" class="btn btn-primary">{{ t('+ ثبت داخلی جدید') }}</a>
 </div>
 
 <div class="dashboard-stats mb-4">
-  <div class="stat-card"><span class="stat-icon">☎</span><strong>{{ stats.total_extensions }}</strong><small>کل داخلی‌ها</small></div>
-  <div class="stat-card"><span class="stat-icon">🏢</span><strong>{{ stats.total_departments }}</strong><small>بخش‌ها</small></div>
-  <div class="stat-card"><span class="stat-icon">🟢</span><strong>{{ stats.active_count }}</strong><small>فعال</small></div>
-  <div class="stat-card"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>غیرفعال</small></div>
-  <div class="stat-card"><span class="stat-icon">🛏</span><strong>{{ stats.room_count }}</strong><small>اتاق مهمان (مخفی از پرسنل)</small></div>
-  {% if stats.pending_count %}<div class="stat-card"><span class="stat-icon">⏳</span><strong>{{ stats.pending_count }}</strong><small>در انتظار بررسی</small></div>{% endif %}
-  <div class="stat-card">
+  <div class="stat-card" data-tone="gold"><span class="stat-icon">☎</span><strong>{{ stats.total_extensions }}</strong><small>{{ t('کل داخلی‌ها') }}</small></div>
+  <div class="stat-card" data-tone="info"><span class="stat-icon">🏢</span><strong>{{ stats.total_departments }}</strong><small>{{ t('بخش‌ها') }}</small></div>
+  <div class="stat-card" data-tone="ok"><span class="stat-icon">🟢</span><strong>{{ stats.active_count }}</strong><small>{{ t('فعال') }}</small></div>
+  <div class="stat-card" data-tone="bad"><span class="stat-icon">🔴</span><strong>{{ stats.inactive_count }}</strong><small>{{ t('غیرفعال') }}</small></div>
+  <div class="stat-card" data-tone="warn"><span class="stat-icon">🛏</span><strong>{{ stats.room_count }}</strong><small>{{ t('اتاق مهمان (مخفی از پرسنل)') }}</small></div>
+  {% if stats.pending_count %}<div class="stat-card" data-tone="warn"><span class="stat-icon">⏳</span><strong>{{ stats.pending_count }}</strong><small>{{ t('در انتظار بررسی') }}</small></div>{% endif %}
+  <div class="stat-card" data-tone="gold">
     <span class="stat-icon">🕒</span>
     <strong class="stat-date">{{ (stats.last_updated | local_dt('%Y/%m/%d')) if stats.last_updated else '—' }}</strong>
-    <small>آخرین به‌روزرسانی</small>
+    <small>{{ t('آخرین به‌روزرسانی') }}</small>
   </div>
-  <div class="stat-card"><span class="stat-icon">👤</span><strong>{{ stats.admin_count }}</strong><small>کاربر مدیر</small></div>
+  <div class="stat-card" data-tone="info"><span class="stat-icon">👤</span><strong>{{ stats.admin_count }}</strong><small>{{ t('کاربر مدیر') }}</small></div>
 </div>
 
 <div class="admin-actions-grid mb-4">
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">⇪</span><h6>ایمپورت اطلاعات</h6></div>
-    <p class="action-desc">قبل از ثبت نهایی، پیش‌نمایش تعداد رکوردهای معتبر/تکراری/خطا نمایش داده می‌شود.</p>
+    <div class="action-card-head"><span class="action-icon">⇪</span><h6>{{ t('ایمپورت اطلاعات') }}</h6></div>
+    <p class="action-desc">{{ t('قبل از ثبت نهایی، پیش‌نمایش تعداد رکوردهای معتبر/تکراری/خطا نمایش داده می‌شود.') }}</p>
     <form action="{{ url_for('import_preview') }}" method="post" enctype="multipart/form-data" class="d-flex gap-2">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
       <input type="file" class="form-control form-control-sm" name="file" accept=".csv,.xlsx" required>
-      <button class="btn btn-outline-primary btn-sm text-nowrap">پیش‌نمایش</button>
+      <button class="btn btn-outline-primary btn-sm text-nowrap">{{ t('پیش‌نمایش') }}</button>
     </form>
   </div>
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">☎</span><h6>اتصال به PBX (ایزابل)</h6></div>
-    <p class="action-desc">{% if pbx_config().enabled %}وضعیت زندهٔ تلفن‌ها، داخلی‌های جدید برای تأیید و تلفن‌های آفلاین.{% else %}هنوز تنظیم نشده؛ راهنما در DEPLOYMENT.md.{% endif %}</p>
-    <a href="{{ url_for('pbx_status') }}" class="btn btn-outline-primary btn-sm">باز کردن صفحهٔ PBX</a>
+    <div class="action-card-head"><span class="action-icon">☎</span><h6>{{ t('اتصال به PBX (ایزابل)') }}</h6></div>
+    <p class="action-desc">{% if pbx_config().enabled %}{{ t('وضعیت زندهٔ تلفن‌ها، داخلی‌های جدید برای تأیید و تلفن‌های آفلاین.') }}{% else %}{{ t('هنوز تنظیم نشده؛ راهنما در DEPLOYMENT.md.') }}{% endif %}</p>
+    <a href="{{ url_for('pbx_status') }}" class="btn btn-outline-primary btn-sm">{{ t('باز کردن صفحهٔ PBX') }}</a>
   </div>
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">⌗</span><h6>ایمپورت MAC تلفن‌ها</h6></div>
-    <p class="action-desc">از فایل Excel یا CSV؛ ستون‌ها را خودتان انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. فایل ناقص هم مشکلی ندارد.</p>
-    <a href="{{ url_for('mac_import') }}" class="btn btn-outline-primary btn-sm">شروع ایمپورت MAC</a>
+    <div class="action-card-head"><span class="action-icon">⌗</span><h6>{{ t('ایمپورت MAC تلفن‌ها') }}</h6></div>
+    <p class="action-desc">{{ t('از فایل Excel یا CSV؛ ستون‌ها را خودتان انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. فایل ناقص هم مشکلی ندارد.') }}</p>
+    <a href="{{ url_for('mac_import') }}" class="btn btn-outline-primary btn-sm">{{ t('شروع ایمپورت MAC') }}</a>
   </div>
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">⇩</span><h6>خروجی گرفتن</h6></div>
-    <p class="action-desc">نسخه پشتیبان یا فایل قابل ویرایش دریافت کنید.</p>
+    <div class="action-card-head"><span class="action-icon">⇩</span><h6>{{ t('خروجی گرفتن') }}</h6></div>
+    <p class="action-desc">{{ t('نسخه پشتیبان یا فایل قابل ویرایش دریافت کنید.') }}</p>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_data', fmt='xlsx') }}">Excel</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_data', fmt='csv') }}">CSV</a>
-      <a class="btn btn-outline-dark btn-sm" href="{{ url_for('download_backup') }}">💾 بکاپ کامل</a>
+      <a class="btn btn-outline-dark btn-sm" href="{{ url_for('download_backup') }}">💾 {{ t('بکاپ کامل') }}</a>
     </div>
   </div>
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">⎙</span><h6>گزارش PDF تفکیک‌شده</h6></div>
-    <p class="action-desc">برای هر بخش یک جدول مستقل در PDF ساخته می‌شود.</p>
+    <div class="action-card-head"><span class="action-icon">⎙</span><h6>{{ t('گزارش PDF تفکیک‌شده') }}</h6></div>
+    <p class="action-desc">{{ t('برای هر بخش یک جدول مستقل در PDF ساخته می‌شود.') }}</p>
     <form action="{{ url_for('export_pdf') }}" method="get" class="d-flex gap-2">
       <select name="department_id" class="form-select form-select-sm">
-        <option value="">همه بخش‌ها</option>
-        {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+        <option value="">{{ t('همه بخش‌ها') }}</option>
+        {% for d in departments %}<option value="{{ (d.id)|e }}">{{ d.name }}</option>{% endfor %}
       </select>
-      <button class="btn btn-outline-danger btn-sm text-nowrap">دانلود</button>
+      <button class="btn btn-outline-danger btn-sm text-nowrap">{{ t('دانلود') }}</button>
     </form>
   </div>
 
   <div class="action-card">
-    <div class="action-card-head"><span class="action-icon">＋</span><h6>افزودن بخش جدید</h6></div>
-    <p class="action-desc">یک واحد یا دپارتمان تازه به فهرست بخش‌ها اضافه کنید.</p>
+    <div class="action-card-head"><span class="action-icon">＋</span><h6>{{ t('افزودن بخش جدید') }}</h6></div>
+    <p class="action-desc">{{ t('یک واحد یا دپارتمان تازه به فهرست بخش‌ها اضافه کنید.') }}</p>
     <form action="{{ url_for('create_department') }}" method="post" class="d-flex flex-column gap-2">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input name="name" class="form-control form-control-sm" placeholder="مثلاً کافی‌شاپ" required>
-      <input name="working_hours" class="form-control form-control-sm" placeholder="ساعت کاری (مثلاً ۰۸:۰۰ تا ۲۰:۰۰)">
-      <button class="btn btn-outline-primary btn-sm text-nowrap">افزودن</button>
+      <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+      <input name="name" class="form-control form-control-sm" placeholder="{{ t('مثلاً کافی‌شاپ') }}" required>
+      <input name="working_hours" class="form-control form-control-sm" placeholder="{{ t('ساعت کاری (مثلاً ۰۸:۰۰ تا ۲۰:۰۰)') }}">
+      <button class="btn btn-outline-primary btn-sm text-nowrap">{{ t('افزودن') }}</button>
     </form>
   </div>
 
   <div class="action-card action-card-danger">
-    <div class="action-card-head"><span class="action-icon">⚠</span><h6>پاک‌سازی همه داخلی‌ها</h6></div>
-    <p class="action-desc">همه به سطل بازیافت منتقل می‌شوند و از آنجا قابل بازگردانی هستند.</p>
-    <form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" data-confirm="همه داخلی‌ها به سطل بازیافت منتقل شوند؟ می‌توانید بعداً از سطل بازیافت برشان گردانید." data-confirm-title="انتقال همه داخلی‌ها" data-confirm-label="بله، منتقل کن">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input name="confirmation" class="form-control form-control-sm" placeholder="بنویسید: پاک کن" required>
-      <button class="btn btn-danger btn-sm text-nowrap">پاک‌سازی</button>
+    <div class="action-card-head"><span class="action-icon">⚠</span><h6>{{ t('پاک‌سازی همه داخلی‌ها') }}</h6></div>
+    <p class="action-desc">{{ t('همه به سطل بازیافت منتقل می‌شوند و از آنجا قابل بازگردانی هستند.') }}</p>
+    <form action="{{ url_for('delete_all_extensions') }}" method="post" class="d-flex gap-2" data-confirm="{{ t('همه داخلی‌ها به سطل بازیافت منتقل شوند؟ می‌توانید بعداً از سطل بازیافت برشان گردانید.') }}" data-confirm-title="{{ t('انتقال همه داخلی‌ها') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">
+      <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+      <input name="confirmation" class="form-control form-control-sm" placeholder="{{ t('بنویسید: پاک کن') }}" required>
+      <button class="btn btn-danger btn-sm text-nowrap">{{ t('پاک‌سازی') }}</button>
     </form>
   </div>
 
@@ -94,43 +95,43 @@
 {% if import_stats %}
 <div class="import-preview-box mb-4">
   <div class="import-preview-head">
-    <h6 class="mb-0">پیش‌نمایش ایمپورت — {{ import_filename }}</h6>
+    <h6 class="mb-0">{{ t('پیش‌نمایش ایمپورت —') }} {{ import_filename }}</h6>
   </div>
   <div class="import-stat-chips">
-    <span class="chip">کل رکوردها: <strong>{{ import_stats.total }}</strong></span>
-    <span class="chip chip-good">معتبر: <strong>{{ import_stats.valid }}</strong></span>
-    <span class="chip chip-info">رکورد جدید: <strong>{{ import_stats.new_records }}</strong></span>
-    <span class="chip chip-info">به‌روزرسانی موجود: <strong>{{ import_stats.existing_updates }}</strong></span>
-    <span class="chip chip-warn">تکراری در فایل: <strong>{{ import_stats.duplicates }}</strong></span>
-    <span class="chip chip-danger">خطا: <strong>{{ import_stats.errors }}</strong></span>
-    {% if import_stats.hidden %}<span class="chip chip-warn">مخفی از پرسنل (اتاق / در انتظار): <strong>{{ import_stats.hidden }}</strong></span>{% endif %}
-    {% if import_stats.warnings %}<span class="chip chip-danger">مقدار نامعتبر (نادیده گرفته می‌شود): <strong>{{ import_stats.warnings }}</strong></span>{% endif %}
+    <span class="chip">{{ t('کل رکوردها:') }} <strong>{{ import_stats.total }}</strong></span>
+    <span class="chip chip-good">{{ t('معتبر:') }} <strong>{{ import_stats.valid }}</strong></span>
+    <span class="chip chip-info">{{ t('رکورد جدید:') }} <strong>{{ import_stats.new_records }}</strong></span>
+    <span class="chip chip-info">{{ t('به‌روزرسانی موجود:') }} <strong>{{ import_stats.existing_updates }}</strong></span>
+    <span class="chip chip-warn">{{ t('تکراری در فایل:') }} <strong>{{ import_stats.duplicates }}</strong></span>
+    <span class="chip chip-danger">{{ t('خطا:') }} <strong>{{ import_stats.errors }}</strong></span>
+    {% if import_stats.hidden %}<span class="chip chip-warn">{{ t('مخفی از پرسنل (اتاق / در انتظار):') }} <strong>{{ import_stats.hidden }}</strong></span>{% endif %}
+    {% if import_stats.warnings %}<span class="chip chip-danger">{{ t('مقدار نامعتبر (نادیده گرفته می‌شود):') }} <strong>{{ import_stats.warnings }}</strong></span>{% endif %}
   </div>
   <div class="d-flex gap-2 mt-3">
-    <form action="{{ url_for('import_confirm') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-primary btn-sm">تأیید و ثبت نهایی</button></form>
-    <form action="{{ url_for('import_cancel') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-secondary btn-sm">انصراف</button></form>
+    <form action="{{ url_for('import_confirm') }}" method="post"><input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}"><button class="btn btn-primary btn-sm">{{ t('تأیید و ثبت نهایی') }}</button></form>
+    <form action="{{ url_for('import_cancel') }}" method="post"><input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}"><button class="btn btn-outline-secondary btn-sm">{{ t('انصراف') }}</button></form>
   </div>
 </div>
 {% endif %}
 
 <div class="panel mb-4">
-  <h5 class="mb-3">مدیریت بخش‌ها</h5>
+  <h5 class="mb-3">{{ t('مدیریت بخش‌ها') }}</h5>
   {% if departments %}
     <div class="dept-chip-grid">
       {% for d in departments %}
         <div class="dept-chip">
           <form id="department-{{ d.id }}" action="{{ url_for('edit_department', department_id=d.id) }}" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input name="name" value="{{ d.name }}" class="form-control form-control-sm dept-chip-input">
-            <input name="working_hours" value="{{ d.working_hours or '' }}" class="form-control form-control-sm dept-chip-hours" placeholder="ساعت کاری…">
+            <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+            <input name="name" value="{{ (d.name)|e }}" class="form-control form-control-sm dept-chip-input">
+            <input name="working_hours" value="{{ (d.working_hours or '')|e }}" class="form-control form-control-sm dept-chip-hours" placeholder="{{ t('ساعت کاری…') }}">
           </form>
           <div class="dept-chip-meta">
-            <span class="dept-chip-count">{{ dept_icon(d.name) }} {{ d.extension_entries|rejectattr('is_deleted')|list|length }} داخلی</span>
+            <span class="dept-chip-count">{{ dept_icon(d.name) }} {{ d.extension_entries|rejectattr('is_deleted')|list|length }} {{ t('داخلی') }}</span>
             <div class="dept-chip-actions">
-              <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="ذخیره">✓</button>
-              <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" data-confirm="این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند." data-confirm-title="حذف بخش" data-confirm-label="بله، حذف کن">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger" title="حذف">✕</button>
+              <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="{{ t('ذخیره') }}">✓</button>
+              <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" data-confirm="{{ t('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.') }}" data-confirm-title="{{ t('حذف بخش') }}" data-confirm-label="{{ t('بله، حذف کن') }}">
+                <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+                <button class="btn btn-sm btn-outline-danger" title="{{ t('حذف') }}">✕</button>
               </form>
             </div>
           </div>
@@ -138,7 +139,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="text-muted mb-0">بخشی ثبت نشده است.</p>
+    <p class="text-muted mb-0">{{ t('بخشی ثبت نشده است.') }}</p>
   {% endif %}
 </div>
 
@@ -146,63 +147,63 @@
   <form method="get" class="admin-search-bar" autocomplete="off">
     <div class="input-icon">
       <span class="input-icon-glyph">⌕</span>
-      <input name="q" value="{{ q }}" autocomplete="off" class="form-control" placeholder="جست‌وجو (شماره، نام، عنوان، محل، IP یا MAC)…">
+      <input name="q" value="{{ (q)|e }}" autocomplete="off" class="form-control" placeholder="{{ t('جست‌وجو (شماره، نام، عنوان، محل، IP یا MAC)…') }}">
     </div>
     <select name="kind" class="form-select form-select-sm w-auto">
-      <option value="">همه انواع</option>
-      {% for key, label in kind_labels.items() %}<option value="{{ key }}" {% if kind_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      <option value="">{{ t('همه انواع') }}</option>
+      {% for key, label in kind_labels.items() %}<option value="{{ (key)|e }}" {% if kind_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
-    <select name="department" class="form-select form-select-sm w-auto" aria-label="بخش">
-      <option value="">همه بخش‌ها</option>
-      <option value="none" {% if department_filter == 'none' %}selected{% endif %}>بدون بخش</option>
-      {% for d in departments %}<option value="{{ d.id }}" {% if department_filter == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    <select name="department" class="form-select form-select-sm w-auto" aria-label="{{ t('بخش') }}">
+      <option value="">{{ t('همه بخش‌ها') }}</option>
+      <option value="none" {% if department_filter == 'none' %}selected{% endif %}>{{ t('بدون بخش') }}</option>
+      {% for d in departments %}<option value="{{ (d.id)|e }}" {% if department_filter == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
     </select>
-    <select name="active" class="form-select form-select-sm w-auto" aria-label="وضعیت ثبت">
-      <option value="">فعال و غیرفعال</option>
-      <option value="1" {% if active_filter == '1' %}selected{% endif %}>فقط فعال</option>
-      <option value="0" {% if active_filter == '0' %}selected{% endif %}>فقط غیرفعال</option>
+    <select name="active" class="form-select form-select-sm w-auto" aria-label="{{ t('وضعیت ثبت') }}">
+      <option value="">{{ t('فعال و غیرفعال') }}</option>
+      <option value="1" {% if active_filter == '1' %}selected{% endif %}>{{ t('فقط فعال') }}</option>
+      <option value="0" {% if active_filter == '0' %}selected{% endif %}>{{ t('فقط غیرفعال') }}</option>
     </select>
     {% if pbx_config().enabled %}
-    <select name="phone" class="form-select form-select-sm w-auto" aria-label="وضعیت تلفن">
-      <option value="">همه وضعیت‌های تلفن</option>
-      {% for key, label in phone_filter_labels.items() %}<option value="{{ key }}" {% if phone_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    <select name="phone" class="form-select form-select-sm w-auto" aria-label="{{ t('وضعیت تلفن') }}">
+      <option value="">{{ t('همه وضعیت‌های تلفن') }}</option>
+      {% for key, label in phone_filter_labels.items() %}<option value="{{ (key)|e }}" {% if phone_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     {% endif %}
     <select name="mac_state" class="form-select form-select-sm w-auto" aria-label="MAC">
-      <option value="">MAC: همه</option>
-      <option value="has" {% if mac_filter == 'has' %}selected{% endif %}>دارای MAC</option>
-      <option value="missing" {% if mac_filter == 'missing' %}selected{% endif %}>بدون MAC</option>
+      <option value="">{{ t('MAC: همه') }}</option>
+      <option value="has" {% if mac_filter == 'has' %}selected{% endif %}>{{ t('دارای MAC') }}</option>
+      <option value="missing" {% if mac_filter == 'missing' %}selected{% endif %}>{{ t('بدون MAC') }}</option>
     </select>
-    <div class="view-toggle" role="group" aria-label="نمای نمایش">
-      <button type="button" class="admin-view-btn" data-admin-view="tiles" title="نمای فشرده (کاشی)">▦</button>
-      <button type="button" class="admin-view-btn" data-admin-view="table" title="نمای جدول با جزئیات">☰</button>
+    <div class="view-toggle" role="group" aria-label="{{ t('نمای نمایش') }}">
+      <button type="button" class="admin-view-btn" data-admin-view="tiles" title="{{ t('نمای فشرده (کاشی)') }}">▦</button>
+      <button type="button" class="admin-view-btn" data-admin-view="table" title="{{ t('نمای جدول با جزئیات') }}">☰</button>
     </div>
-    <button class="btn btn-primary btn-sm">جست‌وجو</button>
-    <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not filters_active %}hidden{% endif %}>پاک کردن</button>
+    <button class="btn btn-primary btn-sm">{{ t('جست‌وجو') }}</button>
+    <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not filters_active %}hidden{% endif %}>{{ t('پاک کردن') }}</button>
   </form>
 
   <form id="bulkForm" method="post" class="bulk-action-bar">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="bulk-select-all"><input type="checkbox" id="selectAllRows"> انتخاب همه</label>
-    <span class="bulk-count"><span id="bulkSelectedCount">0</span> مورد انتخاب شده</span>
-    <button type="submit" formaction="{{ url_for('bulk_activate') }}" class="btn btn-sm btn-outline-success" disabled>فعال‌سازی</button>
-    <button type="submit" formaction="{{ url_for('bulk_deactivate') }}" class="btn btn-sm btn-outline-secondary" disabled>غیرفعال‌سازی</button>
-    <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled data-confirm="موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟" data-confirm-title="انتقال به سطل بازیافت" data-confirm-label="بله، منتقل کن">انتقال به سطل بازیافت</button>
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <label class="bulk-select-all"><input type="checkbox" id="selectAllRows"> {{ t('انتخاب همه') }}</label>
+    <span class="bulk-count"><span id="bulkSelectedCount">0</span> {{ t('مورد انتخاب شده') }}</span>
+    <button type="submit" formaction="{{ url_for('bulk_activate') }}" class="btn btn-sm btn-outline-success" disabled>{{ t('فعال‌سازی') }}</button>
+    <button type="submit" formaction="{{ url_for('bulk_deactivate') }}" class="btn btn-sm btn-outline-secondary" disabled>{{ t('غیرفعال‌سازی') }}</button>
+    <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled data-confirm="{{ t('موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟') }}" data-confirm-title="{{ t('انتقال به سطل بازیافت') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">{{ t('انتقال به سطل بازیافت') }}</button>
   </form>
 
   <form id="tileDeleteForm" method="post" class="d-none">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
   </form>
 
   <div id="adminResults">
     <div class="admin-results-head">
-      <strong>{{ entries|length }} داخلی</strong>
+      <strong>{{ entries|length }} {{ t('داخلی') }}</strong>
       {% if pbx_config().enabled %}
       <div class="tile-legend">
-        <span><i class="lg online"></i>آنلاین</span>
-        <span><i class="lg offline"></i>آفلاین</span>
-        <span><i class="lg slow"></i>تأخیر بالا</span>
-        <span><i class="lg inactive"></i>غیرفعال</span>
+        <span><i class="lg online"></i>{{ t('آنلاین') }}</span>
+        <span><i class="lg offline"></i>{{ t('آفلاین') }}</span>
+        <span><i class="lg slow"></i>{{ t('تأخیر بالا') }}</span>
+        <span><i class="lg inactive"></i>{{ t('غیرفعال') }}</span>
       </div>
       {% endif %}
     </div>
@@ -212,16 +213,16 @@
       {% set ps = phone_status(e) %}
       <div class="ext-tile {{ ps }}{{ ' inactive' if not e.is_active }}" data-ext="{{ e.extension }}"
            title="{{ [e.title, e.person_name, (e.department.name if e.department else ''), e.location, e.last_ip, e.mac] | select | join(' • ') }}">
-        <input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm" aria-label="انتخاب {{ e.extension }}">
+        <input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm" aria-label="{{ t('انتخاب') }} {{ e.extension }}">
         <a class="ext-tile-main" href="{{ url_for('edit_extension', entry_id=e.id) }}">
           <b dir="ltr">{{ e.extension }}</b><span>{{ e.title }}</span>
         </a>
         {% if e.kind != 'staff' %}<span class="ext-kind" title="{{ kind_labels[e.kind] }}">{{ '🛏' if e.kind == 'room' else '⏳' }}</span>{% endif %}
         <span class="ext-tile-ico" aria-hidden="true">☎</span>
-        <button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="حذف">✕</button>
+        <button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="{{ t('حذف') }}">✕</button>
       </div>
       {% else %}
-      <div class="ext-grid-empty">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if filters_active else 'هنوز داخلی ثبت نشده است.' }}</div>
+      <div class="ext-grid-empty">{{ t('نتیجه‌ای برای این جست‌وجو نیست.') if filters_active else t('هنوز داخلی ثبت نشده است.') }}</div>
       {% endfor %}
     </div>
 
@@ -230,18 +231,18 @@
         <thead>
           <tr>
             <th></th>
-            <th>داخلی</th><th>عنوان / مسئول</th><th>بخش</th><th>محل</th><th>وضعیت</th><th>تلفن (IP / MAC)</th><th></th>
+            <th>{{ t('داخلی') }}</th><th>{{ t('عنوان / مسئول') }}</th><th>{{ t('بخش') }}</th><th>{{ t('محل') }}</th><th>{{ t('وضعیت') }}</th><th>{{ t('تلفن (IP / MAC)') }}</th><th></th>
           </tr>
         </thead>
         <tbody>
           {% for e in entries %}
           <tr>
-            <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ e.id }}" form="bulkForm"></td>
+            <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm"></td>
           <td class="fw-bold text-primary">{{ e.extension }}{% if e.kind != 'staff' %}<small class="d-block"><span class="badge text-bg-{{ 'info' if e.kind == 'room' else 'warning' }}">{{ kind_labels[e.kind] }}</span></small>{% endif %}</td>
           <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
           <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
           <td>{{ e.location or '—' }}</td>
-          <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ '🟢 فعال' if e.is_active else '🔴 غیرفعال' }}</span></td>
+          <td><span class="badge {{ 'text-bg-success' if e.is_active else 'text-bg-secondary' }}">{{ t('🟢 فعال') if e.is_active else t('🔴 غیرفعال') }}</span></td>
           <td class="small">
             {% set ps = phone_status(e) %}{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% endif %}
             {% if e.last_ip %}<span class="d-block" dir="ltr">{{ e.last_ip }}</span>{% endif %}
@@ -249,15 +250,15 @@
             {% if not ps and not e.last_ip and not e.mac %}—{% endif %}
           </td>
           <td class="text-nowrap">
-            <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">ویرایش</a>
-            <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید." data-confirm-title="انتقال به سطل بازیافت" data-confirm-label="بله، منتقل کن">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger">حذف</button>
+            <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">{{ t('ویرایش') }}</a>
+            <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="{{ t('این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید.') }}" data-confirm-title="{{ t('انتقال به سطل بازیافت') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">
+              <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+              <button class="btn btn-sm btn-outline-danger">{{ t('حذف') }}</button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-center py-4 text-muted">{{ 'نتیجه‌ای برای این جست‌وجو نیست.' if filters_active else 'هنوز داخلی ثبت نشده است.' }}</td></tr>
+        <tr><td colspan="8" class="text-center py-4 text-muted">{{ t('نتیجه‌ای برای این جست‌وجو نیست.') if filters_active else t('هنوز داخلی ثبت نشده است.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
