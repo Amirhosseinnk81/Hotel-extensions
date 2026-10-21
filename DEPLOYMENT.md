@@ -60,29 +60,7 @@ gunicorn -w 1 -b 0.0.0.0:8080 "app:create_app()"
 بذارید تا هم روی پورت ۸۰/۴۴۳ استاندارد در دسترس باشه، هم بعداً اضافه کردن دامنه و
 گواهی HTTPS راحت‌تر باشه.
 
-## ۲.۵. فایل‌های Bootstrap و فونت (`static/vendor/`)
-
-صفحه‌ها Bootstrap و فونت‌های Vazirmatn و Inter را از پوشهٔ `static/vendor/` می‌خوانند، تا شبکهٔ داخلی بدون اینترنت هم کار کند. این فایل‌ها داخل مخزن نیستند. تا وقتی نیستند، برنامه همان نسخهٔ Bootstrap را از CDN (jsDelivr) می‌گیرد، یعنی کامپیوترهایی که اینترنت دارند درست کار می‌کنند و بقیه صفحهٔ بدون استایل می‌بینند. یک بار، روی کامپیوتری که اینترنت دارد، این را بزنید و ری‌استارت کنید:
-
-```
-python tools/fetch_vendor.py
-```
-
-هر فایل بعد از دانلود بررسی می‌شود (اندازه و امضا). پوشهٔ `static/vendor/` را همراه برنامه به سرور هم ببرید یا commit کنید.
-
 ## ۳. متغیرهای محیطی که باید تنظیم کنید
-
-**ساده‌ترین راه: فایل `.env`.** فایل `.env.example` را در همان پوشهٔ `app.py` کپی کنید و اسمش را `.env` بگذارید، مقدارها را در Notepad بنویسید و برنامه را ری‌استارت کنید؛ دیگر لازم نیست `set` یا `$env:` بزنید. برنامه خودش `.env` را موقع شروع می‌خواند (فایل در `.gitignore` است، پس commit نمی‌شود).
-
-- هر خط یک `NAME=value`. خط‌های شروع‌شده با `#` توضیح‌اند.
-- اگر مقدار شامل ` #` است یا اول و آخرش فاصله دارد، آن را داخل گیومه بگذارید: `PBX_WEB_PASS="رمز #من"`.
-- متغیری که قبلاً در خود سیستم ست شده باشد (مثلاً در سرویس NSSM یا systemd) بر `.env` برتری دارد. اگر مقداری در `.env` اثر نمی‌کند، اول این را بررسی کنید.
-- برای دیدن اینکه برنامه چه فهمید (رمزها نمایش داده نمی‌شوند، غلط املایی نام‌ها و خط‌های خراب گزارش می‌شوند): `python tools/check_env.py`
-- برای اینکه برنامه `.env` را نخواند: `PBX_DOTENV=0` را در خود سیستم ست کنید (تست‌ها همین کار را می‌کنند).
-- هر تغییر در `.env` بعد از ری‌استارت برنامه اثر می‌کند.
-- این فایل را فقط خود شما باید بتوانید بخوانید؛ رمز ایزابل داخل آن است.
-
-جدول زیر نام و کار هر متغیر است؛ همان نام‌ها در `.env` یا در سیستم کار می‌کنند.
 
 | متغیر | توضیح |
 |---|---|
@@ -105,19 +83,206 @@ python tools/fetch_vendor.py
 | `PBX_SLOW_MS` | (اختیاری) تلفن آنلاینی که تأخیرش از این مقدار (میلی‌ثانیه) بیشتر یا برابر باشد نشان زرد «تأخیر بالا» می‌گیرد. پیش‌فرض `150` |
 | `PBX_AMI_TIMEOUT` | (اختیاری) زمان انتظار برای پاسخ PBX به ثانیه. پیش‌فرض `5` |
 | `PBX_UA_BATCH` | (اختیاری) در هر دور User-Agent چند تلفن خوانده شود. پیش‌فرض `60`. دور اول که همه‌چیز تازه است چند دور طول می‌کشد تا مدل همهٔ تلفن‌ها پر شود |
-| `PBX_OUTAGE_MONITOR` / `PBX_OUTAGE_CONFIRM_SYNCS` / `PBX_OUTAGE_KINDS` / `PBX_OUTAGE_LOG` | (اختیاری) ثبت قطعی تلفن‌ها: روشن/خاموش (پیش‌فرض `1`)، تعداد syncهای پشت‌سرهم برای تأیید قطعی (پیش‌فرض `2`)، نوع داخلی‌های پایش‌شده (پیش‌فرض `staff,room`) و مسیر `Log.txt`. بخش ۹ را ببینید |
-| `PBX_OUTAGE_KEEP_DAYS` | (اختیاری) قطعی‌های تمام‌شده‌ی قدیمی‌تر از این تعداد روز خودکار پاک می‌شوند. پیش‌فرض `180`؛ `0` یعنی هرگز پاک نشود |
-| `PBX_ALERTS_ENABLED` | (اختیاری) `0` زنگوله و هشدار مرورگر را خاموش می‌کند. پیش‌فرض `1` (به شرط روشن بودن ثبت قطعی‌ها) |
-| `PBX_ALERT_SUMMARY_THRESHOLD` | (اختیاری) اگر در یک همگام‌سازی بیش از این تعداد تلفن آفلاین شوند، فقط یک آلرت خلاصه می‌آید. پیش‌فرض `5` |
-| `PBX_ALERT_ON_RECOVERY` | (اختیاری) `1` = وقتی تلفنی دوباره وصل شد یک آلرت ساکت بیاید؛ `0` = فقط در Log و گزارش ثبت شود. پیش‌فرض `1` |
 | `PBX_SYNC_AUTOSTART` | (اختیاری) `0` یعنی همگام‌سازی خودکار خاموش باشد و فقط دکمهٔ «همگام‌سازی الان» کار کند. پیش‌فرض `1` |
 | `FLASK_DEBUG` | همیشه خالی/`0` بگذارید. `1` فقط برای توسعه‌ی محلی است و در سرور واقعی هرگز نباید فعال باشد (دسترسی به اجرای کد از راه دور در صورت بروز خطا) |
 
 ## ۴. اجرای همیشگی (سرویس)
 
-طوری تنظیم کنید که بعد از ریست شدن سرور، برنامه خودکار بالا بیاید:
-- **ویندوز:** با NSSM (`nssm install HotelExtensions ...`) دستور Waitress بالا را به یک Windows Service تبدیل کنید.
+طوری تنظیم کنید که بعد از ریست شدن سیستم، برنامه خودکار بالا بیاید:
+
+- **ویندوز:** Windows Service با NSSM و Waitress؛ راهنمای کامل در بخش «۴-ویندوز» پایین.
 - **لینوکس:** یک واحد systemd بسازید که همان دستور Gunicorn را اجرا کند و `Restart=always` داشته باشد.
+
+### ۴-ویندوز: راه‌اندازی به‌صورت Windows Service
+
+این روش روی ویندوز ۱۰ با Python 3.14 و سیستم عضو دامین اجرا و آزموده شده و سه چیز را تضمین می‌کند:
+
+- بعد از ری‌استارت، **بدون اینکه کسی لاگین کند** برنامه بالا می‌آید.
+- Log off یا Sign out اثری روی آن ندارد (سرویس به نشست کاربر وابسته نیست).
+- اگر برنامه کرش کند، NSSM بعد از ۵ ثانیه دوباره اجرایش می‌کند.
+
+همهٔ دستورها در **PowerShell با Run as administrator** اجرا می‌شوند. قبل از شروع، نسخه‌ای را که با `python app.py` اجرا می‌کردید با `Ctrl+C` ببندید؛ دو نسخه روی یک دیتابیس یعنی دو thread همگام‌سازی.
+
+#### ۱. پیش‌نیازها
+
+| مورد | شرط |
+|---|---|
+| Python | نصب برای **همهٔ کاربران** (`C:\Python314\...` یا `C:\Program Files\...`). مسیر `AppData\Local\Programs\Python` برای حساب SYSTEM قابل‌دسترس نیست و سرویس بالا نمی‌آید. با `python -c "import sys; print(sys.executable)"` مسیر را ببینید |
+| پوشهٔ برنامه | خارج از پروفایل کاربر، مثلاً `C:\HotelExtensions`. پوشهٔ Documents ممکن است ریدایرکت‌شده، روی OneDrive یا روی شبکه باشد و SYSTEM به آن دسترسی مطمئن ندارد |
+| NSSM | از nssm.cc/download فایل zip را بگیرید و `win64\nssm.exe` را در `C:\Tools` بگذارید (پایین) |
+
+نصب NSSM (یک بار):
+
+```powershell
+New-Item -ItemType Directory C:\Tools -Force | Out-Null
+Expand-Archive "$env:USERPROFILE\Downloads\nssm-2.24.zip" C:\Tools\nssm-tmp -Force
+Copy-Item C:\Tools\nssm-tmp\nssm-2.24\win64\nssm.exe C:\Tools\nssm.exe
+Remove-Item C:\Tools\nssm-tmp -Recurse
+[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','Machine') + ';C:\Tools', 'Machine')
+$env:Path += ';C:\Tools'
+nssm version
+```
+
+اگر بعداً سرویس با پیام «did not respond in a timely fashion» بالا نیامد، نسخهٔ prerelease NSSM (`2.24-101`) را از همان صفحه بگذارید؛ ۲.۲۴ روی بعضی ویندوزها مشکل شروع سرویس دارد.
+
+#### ۲. کپی برنامه و ساخت محیط پایتون
+
+```powershell
+robocopy "<مسیر-پوشهٔ-فعلی-پروژه>" C:\HotelExtensions /E /XD .git .venv venv __pycache__ tmp_imports /XF *.pyc
+cd C:\HotelExtensions
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\pip install -r requirements.txt
+New-Item -ItemType Directory logs -Force | Out-Null
+.\.venv\Scripts\python.exe -c "import app; app.create_app(); print('OK')"
+```
+
+- کد خروجی robocopy بین ۰ تا ۷ یعنی موفق.
+- اگر برنامه از قبل کار می‌کرد، `hotel_extensions.db` (داده‌ها)، `.secret_key` (نشست ورود)، `.admin_prefix` (آدرس پنل) و `.env` هم کپی می‌شوند و همه‌چیز مثل قبل می‌ماند. پوشهٔ قدیمی را تا آخر کار نگه دارید.
+- **اسم پوشهٔ محیط پایتون:** در این راهنما `.venv` است. اگر محیط را با اسم دیگری ساخته‌اید (مثلاً `venv`)، همان اسم را در همهٔ مسیرها، به‌خصوص در دستور `nssm install` پایین، بگذارید. مسیر اشتباه یعنی سرویس با خطای ۳ بالا نمی‌آید (بخش ۱۱).
+- آخرین دستور باید `OK` چاپ کند.
+
+**اگر نصب بسته‌ها خطا داد:** pip اگر یک بسته را نتواند نصب کند، هیچ‌کدام از بقیه را هم نصب نمی‌کند و بعد `No module named 'flask'` می‌بینید.
+
+| خطا | علت و راه‌حل |
+|---|---|
+| `Building wheel for python-bidi` ... `link.exe not found` | روی پایتون‌های جدید (مثلاً ۳.۱۴) نسخه‌های قدیمی `python-bidi` فایل آماده ندارند و pip می‌خواهد با Rust بسازد. Visual Studio Build Tools نصب نکنید. این را بزنید: `.\.venv\Scripts\pip install --only-binary :all: python-bidi` و بعد دوباره `pip install -r requirements.txt` |
+| `ZoneInfoNotFoundError: 'No time zone found with key Asia/Tehran'` | ویندوز پایگاه منطقهٔ زمانی ندارد: `.\.venv\Scripts\pip install tzdata` |
+| `RequestsDependencyWarning: ... chardet ... doesn't match` | فقط هشدار است؛ `.\.venv\Scripts\pip install "chardet<6"` آن را برمی‌دارد |
+
+#### ۳. فایل `.env` و فایل‌های Bootstrap
+
+```powershell
+copy .env.example .env
+notepad .env
+.\.venv\Scripts\python.exe tools\check_env.py
+.\.venv\Scripts\python.exe tools\fetch_vendor.py
+```
+
+- برنامه `.env` را خودش از کنار `app.py` می‌خواند؛ لازم نیست چیزی در NSSM یا PowerShell ست کنید.
+- **متغیری که در خود سیستم یا در NSSM (`AppEnvironmentExtra`) ست شده باشد بر `.env` برتری دارد.** اگر در `.env` رمز را عوض کردید و اثر نکرد، این را بزنید و سرویس را ری‌استارت کنید: `nssm reset HotelExtensions AppEnvironmentExtra`.
+- فقط خودتان باید به `.env` دسترسی داشته باشید (رمز ایزابل داخل آن است):
+  ```powershell
+  icacls C:\HotelExtensions\.env /inheritance:r /grant "SYSTEM:F" "Administrators:F"
+  ```
+- `fetch_vendor.py` فقط یک بار و روی کامپیوتری که اینترنت دارد لازم است (بخش ۲.۵).
+
+#### ۴. تست دستی (قبل از ساخت سرویس)
+
+```powershell
+cd C:\HotelExtensions
+.\.venv\Scripts\python.exe -m waitress --host=0.0.0.0 --port=8080 --call app:create_app
+```
+
+باید `Serving on http://0.0.0.0:8080` بیاید. بررسی کنید:
+
+1. `http://localhost:8080` باز شود.
+2. با آدرس پنل (`type C:\HotelExtensions\.admin_prefix`) وارد شوید.
+3. پنل ← «اتصال به PBX» ← «همگام‌سازی با PBX» موفق باشد.
+
+بعد با `Ctrl+C` ببندید. اگر اینجا کار نکرد، سرویس هم کار نمی‌کند؛ اول همین را درست کنید.
+
+#### ۵. ساخت سرویس
+
+مسیرها را **کامل و عینی** بنویسید (متغیر PowerShell برای مسیر استفاده نکنید؛ مقدار خالی یا اشتباه آن بی‌صدا در سرویس ثبت می‌شود):
+
+```powershell
+cd C:\HotelExtensions
+nssm install HotelExtensions "C:\HotelExtensions\.venv\Scripts\python.exe" "-m waitress --host=0.0.0.0 --port=8080 --call app:create_app"
+nssm set HotelExtensions AppDirectory "C:\HotelExtensions"
+nssm set HotelExtensions DisplayName "Hotel Extensions"
+nssm set HotelExtensions Start SERVICE_DELAYED_AUTO_START
+nssm set HotelExtensions AppExit Default Restart
+nssm set HotelExtensions AppRestartDelay 5000
+nssm set HotelExtensions AppStdout "C:\HotelExtensions\logs\service.log"
+nssm set HotelExtensions AppStderr "C:\HotelExtensions\logs\service.log"
+nssm set HotelExtensions AppRotateFiles 1
+nssm set HotelExtensions AppRotateOnline 1
+nssm set HotelExtensions AppRotateBytes 5242880
+nssm start HotelExtensions
+```
+
+بررسی:
+
+```powershell
+nssm get HotelExtensions Application
+Test-Path "C:\HotelExtensions\.venv\Scripts\python.exe"      # باید True باشد
+Get-Service HotelExtensions                                   # Running
+Invoke-WebRequest http://localhost:8080 -UseBasicParsing | Select-Object StatusCode    # 200
+Get-Content C:\HotelExtensions\logs\service.log -Tail 20
+```
+
+- فقط **یک پردازش Waitress** اجرا کنید (توضیح بخش ۲). `--threads` پیش‌فرض کافی است.
+- `FLASK_DEBUG` را هرگز ست نکنید. `SESSION_COOKIE_SECURE` را روی HTTP ساده ست نکنید، وگرنه ورود کار نمی‌کند.
+
+#### ۶. فایروال
+
+فقط شبکهٔ داخلی هتل بتواند به پورت برنامه برسد. شبکه و ماسک را از `Get-NetIPAddress -AddressFamily IPv4` ببینید (مثلاً IP دستگاه `192.168.142.178` با ماسک `/22` یعنی `192.168.140.0/22`):
+
+```powershell
+New-NetFirewallRule -DisplayName "HotelExtensions 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow -Profile Domain,Private -RemoteAddress <شبکه>/<ماسک>
+```
+
+اگر کاربران در چند زیرشبکه‌اند، آن‌ها را با کاما بنویسید. بعد از یک سیستم دیگر `http://<IP-این-سیستم>:8080` را باز کنید. اگر باز نشد: `Get-NetTCPConnection -LocalPort 8080 -State Listen` باید `0.0.0.0` نشان دهد؛ و اگر VPN وصل است، یک بار با VPN قطع هم امتحان کنید.
+
+#### ۷. برق، کارت شبکه و Windows Update
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change monitor-timeout-ac 30
+powercfg /hibernate off
+```
+
+- `hibernate off` قابلیت Fast Startup را هم خاموش می‌کند که با سرویس‌ها و شبکه مشکل‌ساز است.
+- **کارت شبکه:** Device Manager ← Network adapters ← کارت اصلی ← Properties ← Power Management ← تیک «Allow the computer to turn off this device to save power» را بردارید. (دستور `Set-NetAdapterPowerManagement` برای این تیک پارامتری ندارد؛ از همین مسیر گرافیکی انجام دهید.) اگر تب Power Management نبود، درایور این گزینه را ندارد و لازم نیست کاری کنید.
+- **Windows Update:** Settings ← Windows Update ← Advanced options ← Active hours را طوری بگذارید که وسط ساعت کار ری‌استارت نشود.
+
+#### ۸. IP ثابت و اسم DNS
+
+اگر IP دستگاه دستی است، از IT بخواهید همان IP را در DHCP برایش **رزرو** کنند (آدرس MAC را با `Get-NetAdapter` ببینید) تا به دستگاه دیگری داده نشود، و یک اسم DNS (مثلاً `extensions`) به آن بدهند. وقتی برنامه به سرور منتقل شد فقط DNS عوض می‌شود و کسی آدرس جدید یاد نمی‌گیرد.
+
+#### ۹. آزمون پذیرش (سه تست)
+
+با سایتِ باز روی یک سیستم دیگر:
+
+1. **ری‌استارت بدون لاگین:** `Restart-Computer`، لاگین نکنید و ۲ تا ۳ دقیقه صبر کنید (Delayed Start). سایت باید از سیستم دیگر باز شود.
+2. **Sign out:** وارد شوید و Sign out کنید. سایت باید باز بماند.
+3. **قطع کارت شبکه** (حضوری، نه با Remote Desktop؛ نام کارت را از `Get-NetAdapter` بردارید):
+   ```powershell
+   Disable-NetAdapter -Name "<نام-کارت>" -Confirm:$false
+   Start-Sleep 90
+   Enable-NetAdapter -Name "<نام-کارت>" -Confirm:$false
+   ```
+   چند دقیقه بعد `logs\Log.txt` باید یک خط `PBX-LOST` و بعد `PBX-OK` داشته باشد و برای تلفن‌ها قطعی ثبت نشده باشد (بخش ۹). سایت هم بدون دست‌زدن به سرویس برمی‌گردد.
+
+#### ۱۰. نگهداری
+
+| کار | دستور |
+|---|---|
+| وضعیت، توقف، شروع، ری‌استارت | `nssm status` / `stop` / `start` / `restart HotelExtensions` |
+| لاگ سرویس و خطاهای شروع | `C:\HotelExtensions\logs\service.log` و `Get-EventLog -LogName Application -Source nssm -Newest 5` |
+| لاگ قطعی تلفن‌ها | `C:\HotelExtensions\logs\Log.txt` |
+| تغییر `.env` | ذخیره کنید و `nssm restart HotelExtensions` |
+| به‌روزرسانی برنامه | `nssm stop HotelExtensions`؛ فایل‌های جدید را با `robocopy ... /E /XD .git .venv venv __pycache__ tmp_imports` روی `C:\HotelExtensions` بریزید (بدون دست‌زدن به `.db`، `.env`، `.secret_key`، `.admin_prefix`)؛ `.\.venv\Scripts\pip install -r requirements.txt`؛ `nssm start HotelExtensions` |
+| حذف سرویس | `nssm stop HotelExtensions` و بعد `nssm remove HotelExtensions confirm` |
+
+**بکاپ شبانه:** در Task Scheduler یک کار روزانه (با حساب SYSTEM) بسازید که این دستور را اجرا کند. مسیر مقصد را روی درایو دیگر یا پوشهٔ شبکه‌ای بگذارید. این روش بکاپ SQLite را حتی وسط نوشتن هم سالم می‌گیرد و به `sqlite3.exe` نیازی ندارد:
+
+```powershell
+C:\HotelExtensions\.venv\Scripts\python.exe -c "import sqlite3,datetime as d; s=sqlite3.connect(r'C:\HotelExtensions\hotel_extensions.db'); t=sqlite3.connect(r'D:\Backups\hotel_'+d.date.today().isoformat()+'.db'); s.backup(t); t.close(); s.close()"
+```
+
+#### ۱۱. خطایابی
+
+| علامت | علت و راه‌حل |
+|---|---|
+| پنجرهٔ Services: «Windows could not start ... service-specific error code 3»، و در Event Log: `CreateProcess() failed: The system cannot find the file specified` | مسیر پایتون ثبت‌شده در سرویس وجود ندارد (معمولاً اسم پوشهٔ محیط، `.venv` در برابر `venv`). `nssm get HotelExtensions Application` را ببینید، با `Test-Path` بسنجید و اصلاح کنید: `nssm set HotelExtensions Application "C:\HotelExtensions\.venv\Scripts\python.exe"` و `nssm set HotelExtensions AppParameters "-m waitress --host=0.0.0.0 --port=8080 --call app:create_app"` |
+| سرویس Stopped یا Paused می‌شود | `Get-Content logs\service.log -Tail 30`؛ آخر آن خطای پایتون یا Waitress است |
+| `Only one usage of each socket address` | پورت ۸۰۸۰ را برنامهٔ دیگری (یا همان نسخهٔ دستی) گرفته: `Get-NetTCPConnection -LocalPort 8080 -State Listen` |
+| در دستی کار می‌کند ولی در سرویس به ایزابل وصل نیست | سرویس با حساب SYSTEM اجرا می‌شود و `.env` را از کنار `app.py` می‌خواند؛ مسیر برنامه، دسترسی SYSTEM به `.env` (`icacls`)، و متغیر قدیمی در `nssm get HotelExtensions AppEnvironmentExtra` را بررسی کنید (متغیر سیستم بر `.env` برتری دارد) |
+| سایت از سیستم دیگر باز نمی‌شود | بخش ۶: فایروال، `Listen` روی `0.0.0.0`، زیرشبکهٔ `-RemoteAddress`، VPN |
+| ساعت‌ها غلط است | `tzdata` نصب باشد و `APP_TIMEZONE` درست (پیش‌فرض `Asia/Tehran`) |
+| زنگولهٔ هشدار اعلان ویندوز نمی‌دهد | روی `http://<IP>:8080` مرورگر اعلان سیستم را نمی‌دهد؛ HTTPS یا `localhost` لازم است (بخش ۱۰) |
 
 ## ۵. بکاپ
 
@@ -179,7 +344,7 @@ write = reporting
 
 ۱. یک کاربر وب‌پنل بسازید که به ماژول **Operator Panel** دسترسی داشته باشد (ترجیحاً غیر از `admin`).
 
-۲. متغیرها را در فایل `.env` بنویسید (نمونه در `.env.example`؛ برنامه آن را خودش می‌خواند، بخش ۳ بالا):
+۲. متغیرها را ست کنید (نمونه در `.env.example`؛ برنامه فقط متغیرهای محیطی را می‌خواند، پس اگر از فایل `.env` استفاده می‌کنید باید ابزار اجرای سرویس آن را لود کند):
 
 ```
 PBX_WEB_HOST=https://192.168.1.100
@@ -235,41 +400,3 @@ python tools/check_issabel_web.py --raw    # شروع متن صفحه را هم 
 - اگر ارتباط با خود ایزابل قطع شود، برای تلفن‌ها قطعی ثبت نمی‌شود؛ فقط خط `PBX-LOST` و بعداً `PBX-OK` نوشته می‌شود.
 - اگر برنامه بیش از `PBX_STATUS_STALE_MINUTES` (پیش‌فرض ۱۰ دقیقه) خاموش یا بی‌ارتباط بوده باشد، وضعیت قبلی معتبر نیست و قطعی‌ای که در این فاصله رخ داده ثبت نمی‌شود.
 - «آفلاین» یعنی تلفن روی ایزابل ثبت‌نام‌نشده است. اگر برق تلفن برود ولی ایزابل هنوز ثبت‌نامش را نگه داشته باشد، قطعی با همان تأخیر دیده می‌شود.
-
-## ۱۰. گزارش قطعی‌ها و هشدار ویندوز
-
-### صفحهٔ «گزارش قطعی‌ها»
-
-منوی «مدیریت» ← «📉 گزارش قطعی‌ها» (فقط برای مدیران واردشده).
-
-- **بالای صفحه:** تعداد تلفن‌های آفلاین الان، قطعی‌های امروز (از نیمه‌شب به وقت `APP_TIMEZONE`) و بدقول‌ترین داخلی‌ها در ۳۰ روز اخیر (به ترتیب تعداد قطعی، بعد مجموع زمان قطع).
-- **جدول:** داخلی، عنوان، زمان قطع، زمان وصل و مدت. قطعی‌های جاری قرمز می‌شوند و مدتشان هر ثانیه بالا می‌رود. «پایان پایش» یعنی داخلی غیرفعال، حذف یا از ایزابل پاک شده و وصل نشده است.
-- **فیلتر:** جست‌وجوی لحظه‌ای (داخلی، عنوان یا IP؛ ارقام فارسی هم کار می‌کند)، بازهٔ تاریخ با دکمه‌های امروز / ۷ روز / ۳۰ روز، و «فقط قطعی‌های جاری». بازهٔ تاریخ بر اساس **زمان شروع** قطعی است. صفحه هر ۳۰ ثانیه خودش تازه می‌شود.
-- **CSV:** دکمهٔ «خروجی CSV» همان فیلترها را اعمال می‌کند (تا ۵۰٬۰۰۰ ردیف؛ روی صفحه فقط ۵۰۰ مورد آخر دیده می‌شود). فایل UTF-8 با BOM است و در Excel فارسی را درست نشان می‌دهد.
-- **پاک‌سازی:** قطعی‌های تمام‌شده‌ی قدیمی‌تر از `PBX_OUTAGE_KEEP_DAYS` (پیش‌فرض ۱۸۰ روز) هر چند ساعت یک بار، هنگام همگام‌سازی، پاک می‌شوند. قطعی جاری هرگز پاک نمی‌شود.
-
-### هشدار ویندوز (اعلان مرورگر)
-
-بعد از ورود به پنل، در هدر یک **زنگوله 🔔** هست. یک بار روی آن بزنید و در پنجرهٔ مرورگر «Allow» را بزنید. از آن به بعد، تا وقتی صفحه‌ای از برنامه در Edge یا Chrome باز باشد، هر قطعی تأییدشده یک اعلان ویندوز می‌سازد:
-
-```
-☎ داخلی 255 (پذیرش 3) آفلاین شد          قطع از ساعت 14:02
-✅ داخلی 255 (پذیرش 3) دوباره وصل شد     مدت قطعی: 00:13:11   (ساکت)
-☎ ۱۲ تلفن همزمان آفلاین شدند              داخلی‌ها: 301، 302، ...
-```
-
-- **طوفان آلرت:** اگر در یک همگام‌سازی بیش از `PBX_ALERT_SUMMARY_THRESHOLD` تلفن (پیش‌فرض ۵) آفلاین شوند، فقط یک آلرت خلاصه می‌آید. وصل‌شدن‌های همزمان هم به همین شکل خلاصه می‌شوند.
-- **وصل‌شدن:** آلرت ساکت (بدون صدا) است. اگر نمی‌خواهید، `PBX_ALERT_ON_RECOVERY=0` بگذارید؛ در این حالت وصل‌شدن فقط در `Log.txt` و گزارش می‌ماند.
-- **زنگوله خاموش:** تنظیم زنگوله روی هر مرورگر جداگانه ذخیره می‌شود. وقتی روشن می‌کنید از «همین الان» شروع می‌شود و رویدادهای گذشته تکرار نمی‌شوند. مرورگری که بیش از ۱۵ دقیقه بسته بوده، قطعی‌های قدیمی را نمی‌بیند (در گزارش هستند).
-- **شرط مهم، HTTPS:** مرورگرها اعلان سیستم را فقط روی **HTTPS** یا **`localhost`** می‌دهند. برای تست روی همان ویندوزی که برنامه اجرا می‌شود (`http://localhost:5000`) مشکلی نیست. وقتی برنامه روی سرور است و از ویندوز دفتر با `http://192.168.x.x` باز می‌شود، اعلان ویندوز **کار نمی‌کند** و زنگوله فقط یک پیام داخل همان صفحه نشان می‌دهد. راه‌حل‌ها:
-  1. (پیشنهادی) برنامه را پشت یک reverse proxy با HTTPS بگذارید (Caddy، nginx یا IIS) و گواهی داخلی سازمان را روی ویندوزهای IT معتبر کنید؛ بعد `SESSION_COOKIE_SECURE=1` را هم بگذارید.
-  2. فقط برای ویندوزهای IT: با Group Policy (یا فلگ مرورگر) آدرس برنامه را «secure origin» اعلام کنید. در Edge/Chrome سیاست `OverrideSecurityRestrictionsOnInsecureOrigin` (فلگ `unsafely-treat-insecure-origin-as-secure`) با مقدار `http://192.168.x.x:5000`. این کار فقط روی همان مرورگرها اثر دارد و باید فقط برای شبکهٔ داخلی استفاده شود.
-- **نکتهٔ ویندوز:** اگر Focus Assist (مزاحم نشوید) روشن باشد، اعلان‌ها در Action Center جمع می‌شوند و روی صفحه نمی‌آیند.
-- **اعلان از سمت سرور (`winotify`) ساخته نشده است.** آن روش فقط وقتی کار می‌کند که برنامه روی خود کامپیوتر ویندوزی کاربر و داخل نشست او اجرا شود، نه به‌صورت سرویس. چون برنامه قرار است روی سرور باشد، هشدار در مرورگر پیاده شد.
-
-### تست
-
-```
-python -m unittest tests.test_outage_alerts tests.test_outage_monitor      # منطق خالص: بدون نیاز به Flask
-python -m unittest tests.test_pbx_outage_alerts tests.test_pbx_outages     # با برنامه و دیتابیس موقت
-```
