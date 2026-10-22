@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% from '_permissions.html' import permission_picker with context %}
+{% set shell = 'admin' %}{% set nav = 'roles' %}
+{% block title %}{{ 'Edit' if role else 'Add' }} Role{% endblock %}
+{% block content %}
+<div class="form-page">
+  <a href="{{ url_for('admin_roles') }}" class="back-link">{{ t('← بازگشت به نقش‌ها') }}</a>
+  <h1 class="h2 mt-3">{{ t('ویرایش نقش') if role else t('نقش جدید') }}</h1>
+  <form method="post" action="{{ url_for('edit_role', role_id=role.id) if role else url_for('new_role') }}" class="panel mt-4" data-loading>
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+
+    <section class="form-section">
+      <header class="form-section-head">
+        <span class="form-section-icon" aria-hidden="true">🛡</span>
+        <div><h2>{{ t('مشخصات نقش') }}</h2>
+          <p>{% if role and role.is_system %}{{ t('نقش سیستمی: نام و دسترسی‌ها قابل تغییرند ولی حذف نمی‌شود.') }}{% else %}{{ t('فیلدهای ستاره‌دار الزامی هستند.') }}{% endif %}</p></div>
+      </header>
+      <div class="row g-3">
+        <div class="col-md-5">
+          <label class="form-label" for="f-name">{{ t('نام نقش') }} <span class="req">*</span></label>
+          <input id="f-name" name="name" value="{{ (state.name)|e }}" class="form-control" maxlength="120" required>
+        </div>
+        <div class="col-md-7">
+          <label class="form-label" for="f-desc">{{ t('توضیحات') }}</label>
+          <input id="f-desc" name="description" value="{{ (state.description)|e }}" class="form-control" maxlength="300">
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section">
+      <header class="form-section-head">
+        <span class="form-section-icon" aria-hidden="true">🔑</span>
+        <div><h2>{{ t('دسترسی‌ها') }}</h2><p>{{ t('تغییرات از درخواست بعدی برای همه‌ی کاربرانِ این نقش اعمال می‌شود.') }}</p></div>
+      </header>
+      {{ permission_picker(groups, state.permissions) }}
+    </section>
+
+    <div class="d-flex gap-2 justify-content-end">
+      <a href="{{ url_for('admin_roles') }}" class="btn btn-secondary">{{ t('انصراف') }}</a>
+      <button class="btn btn-primary" data-loading-text="{{ t('در حال ذخیره...') }}">{{ t('ذخیره') }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

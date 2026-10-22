@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'roles' %}
+{% block title %}Roles{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('نقش‌ها و دسترسی‌ها') }}</h1></div>
+  <a href="{{ url_for('new_role') }}" class="btn btn-primary">{{ t('+ نقش جدید') }}</a>
+</div>
+
+<div class="panel p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>{{ t('نقش') }}</th><th>{{ t('دسترسی‌ها') }}</th><th>{{ t('کاربران') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for r in roles %}
+        {% set users = counts.get(r.id, 0) %}
+        <tr>
+          <td>
+            <strong>{{ r.name }}</strong>
+            {% if r.is_system %}<span class="badge text-bg-light">{{ t('سیستمی') }}</span>{% endif %}
+            {% if r.description %}<small class="d-block text-muted">{{ r.description }}</small>{% endif %}
+          </td>
+          <td class="text-nowrap">{% if r.is_super_admin %}<span class="badge text-bg-warning">{{ t('همه') }}</span>{% else %}{{ r.permission_keys()|length }} / {{ total }}{% endif %}</td>
+          <td>{{ users }}</td>
+          <td class="text-nowrap text-end">
+            {% if not r.is_super_admin %}<a href="{{ url_for('edit_role', role_id=r.id) }}" class="btn btn-sm btn-light">{{ t('ویرایش') }}</a>{% endif %}
+            <a href="{{ url_for('new_role', copy=r.id) }}" class="btn btn-sm btn-outline-secondary">{{ t('کپی') }}</a>
+            {% if not r.is_system and not users %}
+            <form action="{{ url_for('delete_role', role_id=r.id) }}" method="post" class="d-inline" data-confirm="{{ t('این نقش حذف شود؟') }}" data-confirm-title="{{ t('حذف نقش') }}" data-confirm-label="{{ t('بله، حذف کن') }}">
+              <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+              <button class="btn btn-sm btn-outline-danger">{{ t('حذف') }}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-muted small mt-3">{{ t('نقش‌های سیستمی حذف نمی‌شوند. نقشی که به کاربری داده شده، تا وقتی کاربر دارد قابل حذف نیست.') }}</p>
+{% endblock %}

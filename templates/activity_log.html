@@ -4,7 +4,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('لاگ فعالیت‌ها') }}</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
+  <a href="{{ admin_home() or url_for('index') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
 </div>
 
 <div class="panel p-0 overflow-hidden">
@@ -22,7 +22,7 @@
             <span class="badge log-action log-action-{{ log.action }}">
               {{ {'created':t('ایجاد'), 'updated':t('ویرایش'), 'deleted':t('حذف'), 'imported':t('ایمپورت'), 'exported':t('خروجی')}.get(log.action, log.action) }}
             </span>
-            <small class="text-muted">{{ {'extension':t('داخلی'), 'department':t('بخش'), 'user':t('کاربر مدیر'), 'backup':t('بکاپ')}.get(log.entity_type, log.entity_type) }}</small>
+            <small class="text-muted">{{ {'extension':t('داخلی'), 'department':t('بخش'), 'user':t('کاربر'), 'role':t('نقش'), 'backup':t('بکاپ')}.get(log.entity_type, log.entity_type) }}</small>
           </td>
           <td>{{ log.entity_label }}</td>
           <td class="text-muted"><small>{{ log.details or '—' }}</small></td>

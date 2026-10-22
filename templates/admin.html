@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 {% set shell = 'admin' %}{% set nav = 'extensions' %}
+{% set can_edit, can_delete, can_depts = can('extensions.edit'), can('extensions.delete'), can('departments.manage') %}
 {% block title %}Manage Extensions{% endblock %}
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
   <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('داخلی‌های هتل') }}</h1></div>
-  <a href="{{ url_for('create_extension') }}" class="btn btn-primary">{{ t('+ ثبت داخلی جدید') }}</a>
+  {% if can('extensions.create') %}<a href="{{ url_for('create_extension') }}" class="btn btn-primary">{{ t('+ ثبت داخلی جدید') }}</a>{% endif %}
 </div>
 
 <div class="dashboard-stats mb-4">
@@ -25,6 +26,7 @@
 
 <div class="admin-actions-grid mb-4">
 
+  {% if can('extensions.import') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⇪</span><h6>{{ t('ایمپورت اطلاعات') }}</h6></div>
     <p class="action-desc">{{ t('قبل از ثبت نهایی، پیش‌نمایش تعداد رکوردهای معتبر/تکراری/خطا نمایش داده می‌شود.') }}</p>
@@ -34,29 +36,39 @@
       <button class="btn btn-outline-primary btn-sm text-nowrap">{{ t('پیش‌نمایش') }}</button>
     </form>
   </div>
+  {% endif %}
 
+  {% if can('pbx.view') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">☎</span><h6>{{ t('اتصال به PBX (ایزابل)') }}</h6></div>
     <p class="action-desc">{% if pbx_config().enabled %}{{ t('وضعیت زندهٔ تلفن‌ها، داخلی‌های جدید برای تأیید و تلفن‌های آفلاین.') }}{% else %}{{ t('هنوز تنظیم نشده؛ راهنما در DEPLOYMENT.md.') }}{% endif %}</p>
     <a href="{{ url_for('pbx_status') }}" class="btn btn-outline-primary btn-sm">{{ t('باز کردن صفحهٔ PBX') }}</a>
   </div>
+  {% endif %}
 
+  {% if can('extensions.mac_import') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⌗</span><h6>{{ t('ایمپورت MAC تلفن‌ها') }}</h6></div>
     <p class="action-desc">{{ t('از فایل Excel یا CSV؛ ستون‌ها را خودتان انتخاب می‌کنید و قبل از ثبت، پیش‌نمایش کامل می‌بینید. فایل ناقص هم مشکلی ندارد.') }}</p>
     <a href="{{ url_for('mac_import') }}" class="btn btn-outline-primary btn-sm">{{ t('شروع ایمپورت MAC') }}</a>
   </div>
+  {% endif %}
 
+  {% if can('extensions.export') or can('backup.download') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⇩</span><h6>{{ t('خروجی گرفتن') }}</h6></div>
     <p class="action-desc">{{ t('نسخه پشتیبان یا فایل قابل ویرایش دریافت کنید.') }}</p>
     <div class="d-flex gap-2">
+      {% if can('extensions.export') %}
       <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_data', fmt='xlsx') }}">Excel</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_data', fmt='csv') }}">CSV</a>
-      <a class="btn btn-outline-dark btn-sm" href="{{ url_for('download_backup') }}">💾 {{ t('بکاپ کامل') }}</a>
+      {% endif %}
+      {% if can('backup.download') %}<a class="btn btn-outline-dark btn-sm" href="{{ url_for('download_backup') }}">💾 {{ t('بکاپ کامل') }}</a>{% endif %}
     </div>
   </div>
+  {% endif %}
 
+  {% if can('extensions.export') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⎙</span><h6>{{ t('گزارش PDF تفکیک‌شده') }}</h6></div>
     <p class="action-desc">{{ t('برای هر بخش یک جدول مستقل در PDF ساخته می‌شود.') }}</p>
@@ -68,7 +80,9 @@
       <button class="btn btn-outline-danger btn-sm text-nowrap">{{ t('دانلود') }}</button>
     </form>
   </div>
+  {% endif %}
 
+  {% if can_depts %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">＋</span><h6>{{ t('افزودن بخش جدید') }}</h6></div>
     <p class="action-desc">{{ t('یک واحد یا دپارتمان تازه به فهرست بخش‌ها اضافه کنید.') }}</p>
@@ -79,7 +93,9 @@
       <button class="btn btn-outline-primary btn-sm text-nowrap">{{ t('افزودن') }}</button>
     </form>
   </div>
+  {% endif %}
 
+  {% if can('extensions.delete_all') %}
   <div class="action-card action-card-danger">
     <div class="action-card-head"><span class="action-icon">⚠</span><h6>{{ t('پاک‌سازی همه داخلی‌ها') }}</h6></div>
     <p class="action-desc">{{ t('همه به سطل بازیافت منتقل می‌شوند و از آنجا قابل بازگردانی هستند.') }}</p>
@@ -89,10 +105,11 @@
       <button class="btn btn-danger btn-sm text-nowrap">{{ t('پاک‌سازی') }}</button>
     </form>
   </div>
+  {% endif %}
 
 </div>
 
-{% if import_stats %}
+{% if import_stats and can('extensions.import') %}
 <div class="import-preview-box mb-4">
   <div class="import-preview-head">
     <h6 class="mb-0">{{ t('پیش‌نمایش ایمپورت —') }} {{ import_filename }}</h6>
@@ -120,13 +137,18 @@
     <div class="dept-chip-grid">
       {% for d in departments %}
         <div class="dept-chip">
+          {% if can_depts %}
           <form id="department-{{ d.id }}" action="{{ url_for('edit_department', department_id=d.id) }}" method="post">
             <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
             <input name="name" value="{{ (d.name)|e }}" class="form-control form-control-sm dept-chip-input">
             <input name="working_hours" value="{{ (d.working_hours or '')|e }}" class="form-control form-control-sm dept-chip-hours" placeholder="{{ t('ساعت کاری…') }}">
           </form>
+          {% else %}
+          <strong class="d-block">{{ d.name }}</strong>{% if d.working_hours %}<small class="d-block text-muted">{{ d.working_hours }}</small>{% endif %}
+          {% endif %}
           <div class="dept-chip-meta">
             <span class="dept-chip-count">{{ dept_icon(d.name) }} {{ d.extension_entries|rejectattr('is_deleted')|list|length }} {{ t('داخلی') }}</span>
+            {% if can_depts %}
             <div class="dept-chip-actions">
               <button form="department-{{ d.id }}" class="btn btn-sm btn-light" title="{{ t('ذخیره') }}">✓</button>
               <form action="{{ url_for('delete_department', department_id=d.id) }}" method="post" class="d-inline" data-confirm="{{ t('این بخش حذف شود؟ داخلی‌های وابسته بدون بخش باقی می‌مانند.') }}" data-confirm-title="{{ t('حذف بخش') }}" data-confirm-label="{{ t('بله، حذف کن') }}">
@@ -134,6 +156,7 @@
                 <button class="btn btn-sm btn-outline-danger" title="{{ t('حذف') }}">✕</button>
               </form>
             </div>
+            {% endif %}
           </div>
         </div>
       {% endfor %}
@@ -182,14 +205,18 @@
     <button type="button" id="adminClear" class="btn btn-outline-secondary btn-sm" {% if not filters_active %}hidden{% endif %}>{{ t('پاک کردن') }}</button>
   </form>
 
+  {% if can_edit or can_delete %}
   <form id="bulkForm" method="post" class="bulk-action-bar">
     <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
     <label class="bulk-select-all"><input type="checkbox" id="selectAllRows"> {{ t('انتخاب همه') }}</label>
     <span class="bulk-count"><span id="bulkSelectedCount">0</span> {{ t('مورد انتخاب شده') }}</span>
+    {% if can_edit %}
     <button type="submit" formaction="{{ url_for('bulk_activate') }}" class="btn btn-sm btn-outline-success" disabled>{{ t('فعال‌سازی') }}</button>
     <button type="submit" formaction="{{ url_for('bulk_deactivate') }}" class="btn btn-sm btn-outline-secondary" disabled>{{ t('غیرفعال‌سازی') }}</button>
-    <button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled data-confirm="{{ t('موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟') }}" data-confirm-title="{{ t('انتقال به سطل بازیافت') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">{{ t('انتقال به سطل بازیافت') }}</button>
+    {% endif %}
+    {% if can_delete %}<button type="submit" formaction="{{ url_for('bulk_delete') }}" class="btn btn-sm btn-outline-danger" disabled data-confirm="{{ t('موارد انتخاب‌شده به سطل بازیافت منتقل شوند؟') }}" data-confirm-title="{{ t('انتقال به سطل بازیافت') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">{{ t('انتقال به سطل بازیافت') }}</button>{% endif %}
   </form>
+  {% endif %}
 
   <form id="tileDeleteForm" method="post" class="d-none">
     <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
@@ -213,13 +240,13 @@
       {% set ps = phone_status(e) %}
       <div class="ext-tile {{ ps }}{{ ' inactive' if not e.is_active }}" data-ext="{{ e.extension }}"
            title="{{ [e.title, e.person_name, (e.department.name if e.department else ''), e.location, e.last_ip, e.mac] | select | join(' • ') }}">
-        <input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm" aria-label="{{ t('انتخاب') }} {{ e.extension }}">
-        <a class="ext-tile-main" href="{{ url_for('edit_extension', entry_id=e.id) }}">
+        {% if can_edit or can_delete %}<input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm" aria-label="{{ t('انتخاب') }} {{ e.extension }}">{% endif %}
+        {% if can_edit %}<a class="ext-tile-main" href="{{ url_for('edit_extension', entry_id=e.id) }}">{% else %}<span class="ext-tile-main">{% endif %}
           <b dir="ltr">{{ e.extension }}</b><span>{{ e.title }}</span>
-        </a>
+        {% if can_edit %}</a>{% else %}</span>{% endif %}
         {% if e.kind != 'staff' %}<span class="ext-kind" title="{{ kind_labels[e.kind] }}">{{ '🛏' if e.kind == 'room' else '⏳' }}</span>{% endif %}
         <span class="ext-tile-ico" aria-hidden="true">☎</span>
-        <button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="{{ t('حذف') }}">✕</button>
+        {% if can_delete %}<button type="button" class="ext-tile-del" data-delete-url="{{ url_for('delete_extension', entry_id=e.id) }}" title="{{ t('حذف') }}">✕</button>{% endif %}
       </div>
       {% else %}
       <div class="ext-grid-empty">{{ t('نتیجه‌ای برای این جست‌وجو نیست.') if filters_active else t('هنوز داخلی ثبت نشده است.') }}</div>
@@ -237,7 +264,7 @@
         <tbody>
           {% for e in entries %}
           <tr>
-            <td><input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm"></td>
+            <td>{% if can_edit or can_delete %}<input type="checkbox" class="row-select" name="selected_ids" value="{{ (e.id)|e }}" form="bulkForm">{% endif %}</td>
           <td class="fw-bold text-primary">{{ e.extension }}{% if e.kind != 'staff' %}<small class="d-block"><span class="badge text-bg-{{ 'info' if e.kind == 'room' else 'warning' }}">{{ kind_labels[e.kind] }}</span></small>{% endif %}</td>
           <td>{{ e.title }}<small class="d-block text-muted">{{ e.person_name or '—' }}</small></td>
           <td>{{ dept_icon(e.department.name if e.department else '') }} {{ e.department.name if e.department else '—' }}</td>
@@ -250,11 +277,13 @@
             {% if not ps and not e.last_ip and not e.mac %}—{% endif %}
           </td>
           <td class="text-nowrap">
-            <a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">{{ t('ویرایش') }}</a>
+            {% if can_edit %}<a href="{{ url_for('edit_extension', entry_id=e.id) }}" class="btn btn-sm btn-light">{{ t('ویرایش') }}</a>{% endif %}
+            {% if can_delete %}
             <form action="{{ url_for('delete_extension', entry_id=e.id) }}" method="post" class="d-inline" data-confirm="{{ t('این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی می‌توانید آن را برگردانید.') }}" data-confirm-title="{{ t('انتقال به سطل بازیافت') }}" data-confirm-label="{{ t('بله، منتقل کن') }}">
               <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
               <button class="btn btn-sm btn-outline-danger">{{ t('حذف') }}</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% else %}

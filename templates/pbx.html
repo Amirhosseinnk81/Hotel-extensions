@@ -4,7 +4,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('اتصال به PBX (ایزابل)') }}</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
+  <a href="{{ admin_home() or url_for('index') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
 </div>
 
 <div class="panel mb-4">
@@ -17,10 +17,12 @@
         <div>{{ t('آخرین همگام‌سازی موفق:') }} {% if state.last_success %}{{ state.last_success | local_dt }}{% if state.last_duration %} ({{ '%.1f'|format(state.last_duration) }} {{ t('ثانیه)') }}{% endif %}{% else %}{{ t('هنوز انجام نشده') }}{% endif %}</div>
         {% if state.last_error %}<div class="text-danger mt-1">{{ t('آخرین خطا:') }} <span dir="ltr">{{ state.last_error }}</span></div>{% endif %}
       </div>
+      {% if can('pbx.sync') %}
       <form method="post" action="{{ url_for('pbx_sync_now') }}" data-loading>
         <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
         <button type="submit" class="btn btn-primary btn-sm" data-loading-text="{{ t('در حال دریافت...') }}">{{ t('همگام‌سازی با PBX') }}</button>
       </form>
+      {% endif %}
     </div>
     {% if state.summary %}
     <div class="import-stat-chips mt-3">
@@ -64,12 +66,14 @@
           <td dir="ltr">{{ e.phone_model or e.user_agent or '—' }}</td>
           <td>{% if ps %}<span class="phone-pill {{ ps }}">{{ phone_status_labels[ps] }}</span>{% else %}—{% endif %}</td>
           <td class="text-nowrap">
+            {% if can('pbx.review') %}
             <form method="post" action="{{ url_for('pbx_set_kind') }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}"><input type="hidden" name="id" value="{{ (e.id)|e }}">
               <button name="kind" value="staff" class="btn btn-outline-primary btn-sm">{{ t('پرسنل / اداری') }}</button>
               <button name="kind" value="room" class="btn btn-outline-secondary btn-sm">{{ t('اتاق مهمان') }}</button>
             </form>
-            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('edit_extension', entry_id=e.id) }}">{{ t('ویرایش') }}</a>
+            {% endif %}
+            {% if can('extensions.edit') %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('edit_extension', entry_id=e.id) }}">{{ t('ویرایش') }}</a>{% endif %}
           </td>
         </tr>
         {% endfor %}

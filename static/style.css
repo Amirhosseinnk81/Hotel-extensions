@@ -638,3 +638,25 @@ details.form-collapsible[open] > summary{padding-bottom:.9rem;border-bottom:1px 
 .detail-close:hover{color:var(--text);border-color:var(--accent-line)}
 .detail-body{padding:.35rem 1.1rem 1rem;overflow:auto}
 @media print{.detail-dialog{display:none !important}.ext-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.ext-grid .phone-pill{display:none}}
+/* Permission picker (user / role forms) */
+.perm-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem}
+.perm-group{border:1px solid var(--line);border-radius:14px;padding:.75rem .9rem;background:var(--surface-2);min-width:0}
+.perm-group-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;width:100%;float:none;font-size:.95rem;margin-bottom:.4rem;padding-bottom:.45rem;border-bottom:1px solid var(--line)}
+.perm-group-head small{color:var(--muted);font-size:.72rem;font-weight:400}
+.perm-group-all{display:flex;align-items:center;gap:.5rem;font-weight:800;cursor:pointer;margin:0}
+.perm-row{display:flex;align-items:flex-start;gap:.6rem;padding:.45rem .35rem;border-radius:10px;cursor:pointer;margin:0}
+.perm-row:hover{background:var(--surface)}
+.perm-row .form-check-input{flex:none;margin-top:.2rem}
+.perm-text{display:flex;flex-direction:column;flex:1;min-width:0}
+.perm-text strong{font-size:.86rem;font-weight:700}
+.perm-text small{color:var(--muted);font-size:.74rem}
+.perm-text code{align-self:flex-start;font-size:.68rem;color:var(--muted);background:none;border:0;padding:0;opacity:.8}
+.perm-badges{display:flex;flex-wrap:wrap;gap:.25rem;justify-content:flex-end}
+.perm-badge{display:inline-block;font-size:.68rem;font-weight:700;line-height:1.5;padding:0 .45rem;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.perm-badge[hidden]{display:none}
+.perm-badge-danger{background:var(--bad-soft);border-color:var(--bad-line);color:var(--bad-ink)}
+.perm-src-role{background:var(--info-soft);border-color:var(--info-line);color:var(--info-ink)}
+.perm-src-grant{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}
+.perm-src-deny{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}
+.perm-super-note{padding:.75rem 1rem;border-radius:12px;background:var(--warn-soft);border:1px solid var(--warn-line);color:var(--warn-ink);font-weight:600}
+@media (max-width:575.98px){.perm-picker{grid-template-columns:1fr}}

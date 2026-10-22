@@ -2,7 +2,7 @@
 {% macro phone_badge(e) -%}
 {%- set ps = phone_status(e) -%}
 {%- if ps -%}
-<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill data-tip="{{ phone_label(e) }}{% if e.status_updated_at %}&#10;{{ t('آخرین بررسی:') }} {{ e.status_updated_at | local_dt('%H:%M') }}{% endif %}{% if current_user.is_authenticated and ps == 'online' and e.rtt_ms is not none %}&#10;{{ t('تأخیر:') }} {{ e.rtt_ms }} ms{% endif %}">{{ phone_label(e) }}</span>
+<span class="phone-pill {{ ps }}{{ ' slow' if phone_slow(e) }}" data-phone-pill data-tip="{{ phone_label(e) }}{% if e.status_updated_at %}&#10;{{ t('آخرین بررسی:') }} {{ e.status_updated_at | local_dt('%H:%M') }}{% endif %}{% if can('pbx.view') and ps == 'online' and e.rtt_ms is not none %}&#10;{{ t('تأخیر:') }} {{ e.rtt_ms }} ms{% endif %}">{{ phone_label(e) }}</span>
 {%- endif -%}
 {%- endmacro %}
 {% block content %}
@@ -122,7 +122,7 @@
   <div class="live-bar" id="liveBar" data-state="connecting" aria-live="polite">
     <span class="live-dot" aria-hidden="true"></span>
     <span id="liveText">{{ t('در حال اتصال…') }}</span>
-    {% if current_user.is_authenticated %}<button type="button" class="live-refresh" id="liveRefresh" title="{{ t('بروزرسانی همین حالا') }}" aria-label="{{ t('بروزرسانی همین حالا') }}"><span aria-hidden="true">⟳</span></button>{% endif %}
+    {% if can('pbx.view') %}<button type="button" class="live-refresh" id="liveRefresh" title="{{ t('بروزرسانی همین حالا') }}" aria-label="{{ t('بروزرسانی همین حالا') }}"><span aria-hidden="true">⟳</span></button>{% endif %}
   </div>
   {% endif %}
 </div>

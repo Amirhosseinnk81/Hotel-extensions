@@ -1,0 +1,39 @@
+{# Permission checkboxes, grouped exactly as features.py registers them.
+   checked:   keys that are ticked (what the user / role ends up with)
+   role_keys: keys the selected role gives, to show where each permission comes from; none = no source badges (role form)
+   overrides: {key: 'grant' | 'deny'} for the user being edited
+   Usage: {% from '_permissions.html' import permission_picker with context %} #}
+{% macro permission_picker(groups, checked, role_keys=none, overrides={}, disabled=false) %}
+<div class="perm-picker" data-perm-picker>
+  {% for group, items in groups %}
+  <fieldset class="perm-group" data-perm-group>
+    <legend class="perm-group-head">
+      <label class="perm-group-all">
+        <input type="checkbox" class="form-check-input" data-perm-group-toggle aria-label="{{ t('انتخاب همه') }}"{% if disabled %} disabled{% endif %}>
+        <span>{{ t(group) }}</span>
+      </label>
+      <small>{{ t('انتخاب همه') }}</small>
+    </legend>
+    {% for f in items %}
+    {% set src = overrides.get(f.key) or ('role' if role_keys and f.key in role_keys else '') %}
+    <label class="perm-row{{ ' is-dangerous' if f.dangerous }}">
+      <input type="checkbox" class="form-check-input" name="perm" value="{{ f.key }}" data-perm-key{% if f.key in checked %} checked{% endif %}{% if disabled %} disabled{% endif %}>
+      <span class="perm-text">
+        <strong>{{ f.label }}</strong>
+        {% if f.description %}<small>{{ f.description }}</small>{% endif %}
+        <code dir="ltr">{{ f.key }}</code>
+      </span>
+      <span class="perm-badges">
+        {% if f.dangerous %}<span class="perm-badge perm-badge-danger" title="{{ t('عملیات حساس؛ فقط به افراد مطمئن بدهید.') }}">⚠ {{ t('حساس') }}</span>{% endif %}
+        {% if role_keys is not none %}
+        <span class="perm-badge perm-src-role" data-src="role"{% if src != 'role' %} hidden{% endif %}>{{ t('از نقش') }}</span>
+        <span class="perm-badge perm-src-grant" data-src="grant"{% if src != 'grant' %} hidden{% endif %}>{{ t('اضافه') }}</span>
+        <span class="perm-badge perm-src-deny" data-src="deny"{% if src != 'deny' %} hidden{% endif %}>{{ t('محدود') }}</span>
+        {% endif %}
+      </span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+</div>
+{% endmacro %}

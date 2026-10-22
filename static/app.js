@@ -1170,6 +1170,71 @@
 
   window.HotelUI = { toast: toast, confirm: openConfirm };
 
+  /* ---------------- Permission picker (user and role forms) ----------------
+     The checkboxes say what the user ends up with. On the user form every tick that differs from the
+     selected role is shown as an override (grant / deny); the server computes the same thing on save. */
+  function initPermissionPickers() {
+    $$('[data-perm-picker]').forEach(function (picker) {
+      var form = closest(picker, 'form');
+      var roleSelect = form ? $('[data-role-perms]', form) : null;
+      var rolePerms = {};
+      var overrides = {};
+      try { rolePerms = roleSelect ? JSON.parse(roleSelect.getAttribute('data-role-perms')) : {}; } catch (e) {}
+      try { overrides = JSON.parse((form && form.getAttribute('data-overrides')) || '{}') || {}; } catch (e) {}
+      var boxes = $$('[data-perm-key]', picker);
+
+      function roleKeys() { return (roleSelect && rolePerms[roleSelect.value]) || []; }
+      function paint(box) {
+        var src = overrides[box.value] || (roleKeys().indexOf(box.value) !== -1 ? 'role' : '');
+        $$('[data-src]', closest(box, '.perm-row')).forEach(function (badge) { badge.hidden = badge.getAttribute('data-src') !== src; });
+      }
+      function record(box) {
+        if (!roleSelect) return;
+        if (box.checked === (roleKeys().indexOf(box.value) !== -1)) delete overrides[box.value];
+        else overrides[box.value] = box.checked ? 'grant' : 'deny';
+        paint(box);
+      }
+      function syncGroups() {
+        $$('[data-perm-group]', picker).forEach(function (group) {
+          var toggle = $('[data-perm-group-toggle]', group);
+          var items = $$('[data-perm-key]', group);
+          var on = items.filter(function (b) { return b.checked; }).length;
+          toggle.checked = on === items.length;
+          toggle.indeterminate = on > 0 && on < items.length;
+        });
+      }
+
+      picker.addEventListener('change', function (e) {
+        var target = e.target;
+        if (target.hasAttribute('data-perm-group-toggle')) {
+          $$('[data-perm-key]', closest(target, '[data-perm-group]')).forEach(function (b) {
+            if (!b.disabled) { b.checked = target.checked; record(b); }
+          });
+        } else if (target.hasAttribute('data-perm-key')) {
+          record(target);
+        }
+        syncGroups();
+      });
+
+      if (roleSelect) {
+        roleSelect.addEventListener('change', function () {
+          var isSuper = rolePerms[roleSelect.value] === null;
+          var body = $('[data-perm-body]', form);
+          var note = $('[data-super-note]', form);
+          if (body) body.hidden = isSuper;
+          if (note) note.hidden = !isSuper;
+          boxes.forEach(function (b) {
+            var own = overrides[b.value];
+            b.checked = own ? own === 'grant' : roleKeys().indexOf(b.value) !== -1;
+            paint(b);
+          });
+          syncGroups();
+        });
+      }
+      syncGroups();
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initTheme();
     initConfirm();
@@ -1191,5 +1256,6 @@
     initAdminList();
     initOutagePage();
     initOutageAlerts();
+    initPermissionPickers();
   });
 })();

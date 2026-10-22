@@ -4,7 +4,7 @@
 {% block content %}
 {% set has_network = entry and (entry.mac or entry.phone_model or entry.reg_status or entry.last_ip or entry.user_agent) %}
 <div class="form-page">
-  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
+  <a href="{{ admin_home() or url_for('index') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
   <h1 class="h2 mt-3">{{ t('ویرایش') if entry else t('ثبت') }} {{ t('داخلی') }}</h1>
   <form method="post" class="panel mt-4" data-loading>
     <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
@@ -120,7 +120,7 @@
 
     <div class="form-actions">
       <button type="submit" class="btn btn-primary px-4" data-loading-text="{{ t('در حال ذخیره...') }}">{{ t('ذخیره اطلاعات') }}</button>
-      <a href="{{ url_for('admin') }}" class="btn btn-secondary">{{ t('انصراف') }}</a>
+      <a href="{{ admin_home() or url_for('index') }}" class="btn btn-secondary">{{ t('انصراف') }}</a>
     </div>
   </form>
 </div>

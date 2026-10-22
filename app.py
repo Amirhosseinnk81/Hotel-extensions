@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import uuid
+from functools import wraps
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -18,7 +19,7 @@ from logging.handlers import RotatingFileHandler
 
 
 
-from flask import Flask, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
@@ -40,6 +41,7 @@ from xml.sax.saxutils import escape as xml_escape
 from sqlalchemy.orm.attributes import flag_modified
 
 import envfile
+import features
 import i18n
 import outage_alerts
 import outage_monitor
@@ -460,6 +462,50 @@ def clear_login_failures(ip):
     _login_failures.pop(ip, None)
 
 
+# Per-account lockout: after LOGIN_LOCK_ATTEMPTS wrong passwords for one username within LOGIN_LOCK_MINUTES,
+# that username is refused for LOGIN_LOCK_MINUTES (from any IP; the IP limiter above stops one machine).
+# Keyed by the typed username, so an unknown name behaves exactly like a real one (no account probing).
+# In memory like the IP limiter: fine for the single Waitress process; a restart clears it.
+LOGIN_LOCK_ATTEMPTS = int(os.getenv('LOGIN_LOCK_ATTEMPTS', '5'))  # 0 = off
+LOGIN_LOCK_MINUTES = int(os.getenv('LOGIN_LOCK_MINUTES', '15'))
+_account_failures = {}  # username (lower case) -> [failure timestamps]
+_account_locks = {}  # username (lower case) -> unlock timestamp
+_account_lock_guard = threading.Lock()
+
+
+def account_locked(username):
+    key = (username or '').strip().lower()
+    with _account_lock_guard:
+        until = _account_locks.get(key)
+        if until is not None and until <= time.time():
+            _account_locks.pop(key, None)
+            until = None
+        return until is not None
+
+
+def record_account_failure(username):
+    """Count one wrong password; True when this failure locks the account."""
+    key = (username or '').strip().lower()
+    if not key or LOGIN_LOCK_ATTEMPTS <= 0:
+        return False
+    now, window = time.time(), LOGIN_LOCK_MINUTES * 60
+    with _account_lock_guard:
+        attempts = [t for t in _account_failures.get(key, []) if now - t < window] + [now]
+        if len(attempts) >= LOGIN_LOCK_ATTEMPTS:
+            _account_failures.pop(key, None)
+            _account_locks[key] = now + window
+            return True
+        _account_failures[key] = attempts
+        return False
+
+
+def clear_account_lock(username):
+    key = (username or '').strip().lower()
+    with _account_lock_guard:
+        _account_failures.pop(key, None)
+        _account_locks.pop(key, None)
+
+
 LOCAL_TZ = ZoneInfo(os.getenv('APP_TIMEZONE', 'Asia/Tehran'))
 
 
@@ -513,14 +559,162 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     display_name = db.Column(db.String(120), nullable=False)
-    is_admin = db.Column(db.Boolean, default=True, nullable=False)
+    is_admin = db.Column(db.Boolean, default=True, nullable=False)  # deprecated: access comes from role_id (RBAC)
     must_change_password = db.Column(db.Boolean, default=False, nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=True, index=True)  # no role = no access
+    # Overrides UserMixin.is_active, so Flask-Login itself refuses to log in a deactivated account.
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    last_login_at = db.Column(db.DateTime)
+    overrides = db.relationship('UserPermissionOverride', backref='user', lazy=True, cascade='all, delete-orphan')
+
+    def can(self, key):
+        return user_can(self, key)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class Role(db.Model):
+    """A named set of permission keys (see features.py). Built-in roles have is_system=True."""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(300))
+    is_system = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    permissions = db.relationship('RolePermission', backref='role', lazy=True, cascade='all, delete-orphan')
+    users = db.relationship('User', backref='role', lazy=True)
+
+    @property
+    def is_super_admin(self):
+        return self.key == features.SUPER_ADMIN
+
+    def permission_keys(self):
+        return features.known_keys(p.permission_key for p in self.permissions)
+
+
+class RolePermission(db.Model):
+    __table_args__ = (db.UniqueConstraint('role_id', 'permission_key'),)
+    id = db.Column(db.Integer, primary_key=True)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False, index=True)
+    permission_key = db.Column(db.String(80), nullable=False)
+
+
+class UserPermissionOverride(db.Model):
+    """Per-user exception to the role: effect 'grant' adds a permission, 'deny' removes it (deny wins)."""
+    __table_args__ = (db.UniqueConstraint('user_id', 'permission_key'),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    permission_key = db.Column(db.String(80), nullable=False)
+    effect = db.Column(db.String(5), nullable=False)  # grant / deny
+
+
+def effective_permissions(user):
+    """(is_super_admin, frozenset of granted keys) for a logged-in user. Computed once per request
+    (cached on flask.g), so a change made by an admin applies from the user's next request."""
+    cache = g.setdefault('_rbac_cache', {}) if has_app_context() else {}
+    if user.id in cache:
+        return cache[user.id]
+    role = db.session.get(Role, user.role_id) if user.role_id else None
+    if role is None:
+        result = (False, frozenset())
+    elif role.is_super_admin:
+        result = (True, frozenset(features.FEATURES))
+    else:
+        overrides = UserPermissionOverride.query.filter_by(user_id=user.id).all()
+        grants = {o.permission_key for o in overrides if o.effect == 'grant'}
+        denies = {o.permission_key for o in overrides if o.effect == 'deny'}
+        result = (False, frozenset(features.known_keys((role.permission_keys() | grants) - denies)))
+    cache[user.id] = result
+    return result
+
+
+def clear_permission_cache():
+    if has_app_context():
+        g.pop('_rbac_cache', None)
+
+
+def user_can(user, key):
+    """Server-side permission check. Inactive, role-less and anonymous users get nothing; Super Admin gets
+    every registered key (also future ones); otherwise role permissions + grants - denies. A key that is
+    not in features.py is always refused (catches typos in route decorators and templates)."""
+    if user is None or not getattr(user, 'is_authenticated', False) or not getattr(user, 'is_active', False):
+        return False
+    if not features.is_known(key):
+        logging.getLogger(__name__).warning('Permission check for unregistered feature key %r', key)
+        return False
+    is_super, keys = effective_permissions(user)
+    return is_super or key in keys
+
+
+def wants_json():
+    """API calls (fetch from static/app.js) get JSON errors instead of a redirect or an HTML page."""
+    return request.path.startswith('/api/') or request.accept_mimetypes.best == 'application/json'
+
+
+def _json_error(error, status):
+    response = jsonify(ok=False, error=error)
+    response.status_code = status
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+def forbidden_response():
+    if wants_json():
+        return _json_error('forbidden', 403)
+    return render_template('error.html', code=403, heading='دسترسی ندارید',
+                           message='حساب شما اجازه‌ی دسترسی به این بخش را ندارد. اگر لازم است، با مدیر سیستم تماس بگیرید.'), 403
+
+
+def _unauthenticated_response():
+    if wants_json():
+        return _json_error('unauthorized', 401)
+    return login_manager.unauthorized()  # same redirect to the login page as @login_required
+
+
+def require_permission(key):
+    """Route guard: not logged in -> login page (JSON 401 for APIs); logged in without the permission -> 403.
+    The key must be registered in features.py, otherwise the app refuses to start."""
+    if not features.is_known(key):
+        raise ValueError(f'@require_permission({key!r}): not registered in features.py')
+
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return _unauthenticated_response()
+            if not user_can(current_user, key):
+                return forbidden_response()
+            return view(*args, **kwargs)
+        wrapped.access = 'permission'
+        wrapped.required_permission = key
+        return wrapped
+    return decorator
+
+
+def login_only(view):
+    """Any logged-in user, whatever the role (logout, own password)."""
+    wrapped = login_required(view)
+    wrapped.access = 'login'
+    return wrapped
+
+
+def public_endpoint(view):
+    """Deliberately open to everyone. Every route needs one of these three decorators (see tests/test_rbac_routes.py)."""
+    view.access = 'public'
+    return view
+
+
+def admin_home_url(user):
+    """Where a user lands after login: the first admin page they may open (menu order)."""
+    for _group, entries in features.menu():
+        for feature, item in entries:
+            if user_can(user, feature.key):
+                return url_for(item.endpoint)
+    return None
 
 
 class Department(db.Model):
@@ -632,6 +826,12 @@ def _ensure_columns(engine):
         statements.append('ALTER TABLE department ADD COLUMN working_hours VARCHAR(120)')
     if 'must_change_password' not in existing_user_cols:
         statements.append('ALTER TABLE user ADD COLUMN must_change_password BOOLEAN DEFAULT 0 NOT NULL')
+    if 'role_id' not in existing_user_cols:
+        statements.append('ALTER TABLE user ADD COLUMN role_id INTEGER REFERENCES role (id)')
+    if 'is_active' not in existing_user_cols:
+        statements.append('ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL')
+    if 'last_login_at' not in existing_user_cols:
+        statements.append('ALTER TABLE user ADD COLUMN last_login_at DATETIME')
     new_columns = (
         ('kind', "VARCHAR(10) DEFAULT 'staff' NOT NULL"),
         ('mac', 'VARCHAR(17)'),
@@ -648,6 +848,7 @@ def _ensure_columns(engine):
             statements.append(f'ALTER TABLE extension ADD COLUMN {column_name} {column_type}')
     statements.append('CREATE INDEX IF NOT EXISTS ix_extension_kind ON extension (kind)')
     statements.append('CREATE INDEX IF NOT EXISTS ix_extension_mac ON extension (mac)')
+    statements.append('CREATE INDEX IF NOT EXISTS ix_user_role_id ON user (role_id)')
     if statements:
         with engine.begin() as conn:
             for stmt in statements:
@@ -1130,9 +1331,24 @@ def create_app():
     app.jinja_env.globals['dept_icon'] = department_icon
     app.jinja_env.globals['vendor_asset'] = vendor_asset_url
     def can_see_contact():
-        return app.config['SHOW_CONTACT_PUBLICLY'] or current_user.is_authenticated
+        return app.config['SHOW_CONTACT_PUBLICLY'] or user_can(current_user, 'extensions.view')
 
     app.jinja_env.globals['can_see_contact'] = can_see_contact
+    app.jinja_env.globals['can'] = lambda key: user_can(current_user, key)
+
+    def admin_menu():
+        """Sidebar groups for the current user: [(group, [(nav, endpoint, icon, label), ...]), ...]."""
+        groups = []
+        for group, entries in features.menu():
+            items = [(item.nav, item.endpoint, item.icon, item.label or feature.label)
+                     for feature, item in entries if user_can(current_user, feature.key)]
+            if items:
+                groups.append((group, items))
+        return groups
+
+    app.jinja_env.globals['admin_menu'] = admin_menu
+    app.jinja_env.globals['admin_home'] = lambda: admin_home_url(current_user)
+    app.jinja_env.globals['account_locked'] = account_locked
     app.jinja_env.globals['phone_status'] = display_phone_status
     app.jinja_env.globals['phone_status_labels'] = PHONE_STATUS_LABELS
     app.jinja_env.globals['phone_slow'] = phone_is_slow
@@ -1176,6 +1392,7 @@ def create_app():
         g.lang = lang if lang in i18n.LANGS else i18n.DEFAULT_LANG
 
     @app.route('/lang/<code>')
+    @public_endpoint
     def set_language(code):
         if code not in i18n.LANGS:
             abort(404)
@@ -1219,6 +1436,7 @@ def create_app():
     outage_monitor.setup_log_file(os.getenv('PBX_OUTAGE_LOG', '').strip() or os.path.join(BASE_DIR, 'logs', outage_monitor.LOG_FILE_NAME))
 
     @app.route('/robots.txt')
+    @public_endpoint
     def robots_txt():
         return 'User-agent: *\nDisallow: /\n', 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
@@ -1226,6 +1444,10 @@ def create_app():
     def csrf_error(_error):
         flash('نشست شما منقضی شده یا صفحه در تب دیگری قدیمی بوده است. لطفاً دوباره تلاش کنید.', 'danger')
         return redirect(request.referrer or url_for('index')), 303
+
+    @app.errorhandler(403)
+    def forbidden(_error):
+        return forbidden_response()
 
     @app.errorhandler(404)
     def not_found(_error):
@@ -1241,10 +1463,30 @@ def create_app():
         return db.session.get(User, int(user_id))
 
     with app.app_context():
+        backup = backup_before_rbac_migration(db.engine, os.path.join(BASE_DIR, 'hotel_extensions.db'))
+        if backup:
+            app.logger.warning('Database backed up before adding roles/permissions: %s', backup)
         db.create_all()
         _ensure_columns(db.engine)
+        seed_roles()
+        migrated = migrate_users_to_roles()
+        if migrated:
+            app.logger.warning('RBAC migration: %d existing user(s) assigned to the Super Admin role', migrated)
         seed_data()
         flag_default_passwords(app)
+
+    @app.before_request
+    def reset_permission_cache():
+        clear_permission_cache()  # g is per request anyway; this keeps it true if a context is ever reused
+
+    @app.before_request
+    def sign_out_deactivated_users():
+        user = current_user._get_current_object()
+        if isinstance(user, User) and not user.is_active:
+            logout_user()
+            session.pop('_fresh', None)
+            if not wants_json():
+                flash('حساب کاربری شما غیرفعال شده است و از سامانه خارج شدید.', 'warning')
 
     @app.before_request
     def enforce_password_change():
@@ -1254,6 +1496,7 @@ def create_app():
                 return redirect(url_for('change_password'))
 
     @app.route('/api/version')
+    @public_endpoint
     def api_version():
         return {'version': _data_version}
 
@@ -1320,6 +1563,7 @@ def create_app():
         return entries, sort_value, filters_active
 
     @app.route('/')
+    @public_endpoint
     def index():
         per_page_raw = request.args.get('per_page', '20').strip().lower()
         page = request.args.get('page', 1, type=int)
@@ -1365,7 +1609,7 @@ def create_app():
         )
 
     @app.route(f'/{admin_prefix}')
-    @login_required
+    @require_permission('extensions.view')
     def admin():
         q = request.args.get('q', '').strip()
         kind_filter = request.args.get('kind', '')
@@ -1425,40 +1669,65 @@ def create_app():
         )
 
     @app.route(f'/{admin_prefix}/activity-log')
-    @login_required
+    @require_permission('activity_log.view')
     def activity_log():
         logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(300).all()
         return render_template('activity_log.html', logs=logs)
 
+    def landing_after_login(user):
+        home = admin_home_url(user)
+        if home is None:
+            flash('حساب شما هنوز به هیچ بخشی از پنل مدیریت دسترسی ندارد. با مدیر سیستم تماس بگیرید.', 'warning')
+        return home or url_for('index')
+
     @app.route(f'/{admin_prefix}/login', methods=['GET', 'POST'])
+    @public_endpoint
     def login():
         if current_user.is_authenticated:
-            return redirect(url_for('admin'))
+            return redirect(admin_home_url(current_user) or url_for('index'))
         if request.method == 'POST':
             ip = request.remote_addr or 'unknown'
             if is_login_rate_limited(ip):
                 flash('تعداد تلاش‌های ناموفق بیش از حد مجاز است. چند دقیقه دیگر دوباره امتحان کنید.', 'danger')
                 return render_template('login.html')
-            user = User.query.filter_by(username=request.form.get('username', '').strip()).first()
+            username = request.form.get('username', '').strip()
+            if account_locked(username):
+                flash('این حساب به‌دلیل چند تلاش ناموفق پشت‌سرهم موقتاً قفل شده است. چند دقیقه‌ی دیگر دوباره امتحان کنید.', 'danger')
+                return render_template('login.html')
+            user = User.query.filter_by(username=username).first()
             if user and user.check_password(request.form.get('password', '')):
                 clear_login_failures(ip)
+                clear_account_lock(username)
+                if not user.is_active:
+                    flash('حساب کاربری شما غیرفعال شده است. با مدیر سیستم تماس بگیرید.', 'danger')
+                    return render_template('login.html')
                 login_user(user)
+                user.last_login_at = datetime.utcnow()
+                db.session.commit()
                 if user.must_change_password:
                     flash('برای ادامه، ابتدا رمز عبور خود را تغییر دهید.', 'warning')
                     return redirect(url_for('change_password'))
-                return redirect(url_for('admin'))
+                return redirect(landing_after_login(user))
             record_login_failure(ip)
+            if record_account_failure(username):
+                # the lock ignores case, so find the account the same way for the audit log
+                locked = user or User.query.filter(func.lower(User.username) == username.lower()).first()
+                if locked is not None:
+                    log_activity('updated', 'user', f'{locked.username} ({locked.display_name})',
+                                 f'قفل موقت ورود پس از {LOGIN_LOCK_ATTEMPTS} تلاش ناموفق (IP: {ip})')
+                    db.session.commit()
+                    app.logger.warning('Account %s locked for %d minutes after failed logins', locked.username, LOGIN_LOCK_MINUTES)
             flash('نام کاربری یا رمز عبور صحیح نیست.', 'danger')
         return render_template('login.html')
 
     @app.route('/logout', methods=['POST'])
-    @login_required
+    @login_only
     def logout():
         logout_user()
         return redirect(url_for('index'))
 
     @app.route(f'/{admin_prefix}/change-password', methods=['GET', 'POST'])
-    @login_required
+    @login_only
     def change_password():
         if request.method == 'POST':
             current_password = request.form.get('current_password', '')
@@ -1478,58 +1747,370 @@ def create_app():
                 log_activity('updated', 'user', f'تغییر رمز عبور — {current_user.username}')
                 db.session.commit()
                 flash('رمز عبور با موفقیت تغییر کرد.', 'success')
-                return redirect(url_for('admin'))
+                return redirect(landing_after_login(current_user))
         return render_template('change_password.html', forced=current_user.must_change_password)
 
+    # ---- Users, roles and permissions (RBAC) ---------------------------------------------------
+    # Rules enforced here (the templates only mirror them):
+    #  * nobody hands out access they do not have themselves; only a Super Admin creates or changes a Super Admin;
+    #  * the last active Super Admin cannot be deleted, deactivated or demoted;
+    #  * nobody changes their own role, active flag or permissions (no self-lockout), nor deletes themselves;
+    #  * built-in roles cannot be deleted, the Super Admin role cannot be edited, a role with users cannot be deleted.
+
+    def is_super_admin_user(user):
+        return bool(user is not None and user.role is not None and user.role.is_super_admin)
+
+    def other_active_super_admins(user_id):
+        return (User.query.join(Role, User.role_id == Role.id)
+                .filter(Role.key == features.SUPER_ADMIN, User.is_active.is_(True), User.id != user_id).count())
+
+    def handout_problem(gained_keys):
+        beyond = [features.FEATURES[k].label for k in sorted(gained_keys) if not user_can(current_user, k)]
+        return ('نمی‌توانید دسترسی‌ای بدهید که خودتان ندارید: ' + '، '.join(beyond)) if beyond else None
+
+    def override_map(user):
+        return {o.permission_key: o.effect for o in user.overrides if features.is_known(o.permission_key)}
+
+    def keys_diff(before, after):
+        return ' '.join([f'+{k}' for k in sorted(after - before)] + [f'−{k}' for k in sorted(before - after)])
+
+    def clip(text, limit=300):
+        return text if len(text) <= limit else text[:limit - 1] + '…'
+
+    def all_roles():
+        return Role.query.order_by(Role.is_system.desc(), Role.id).all()
+
+    def role_permission_json(roles):
+        return {str(r.id): (None if r.is_super_admin else sorted(r.permission_keys())) for r in roles}
+
+    def render_user_form(target, state):
+        roles = all_roles()
+        if not is_super_admin_user(current_user):  # cannot hand out the Super Admin role anyway
+            roles = [r for r in roles if not r.is_super_admin or (target is not None and target.role_id == r.id)]
+        role = db.session.get(Role, state['role_id']) if state['role_id'] else None
+        return render_template('user_form.html', target=target, state=state, roles=roles, selected_role=role,
+                               role_perms=role_permission_json(roles), groups=features.grouped(),
+                               is_self=target is not None and target.id == current_user.id)
+
+    def user_state(target):
+        """What the form shows for an existing user, or the defaults for a new one."""
+        if target is None:
+            viewer = Role.query.filter_by(key='viewer').first()
+            return {'username': '', 'display_name': '', 'role_id': viewer.id if viewer else None, 'is_active': True,
+                    'overrides': {}, 'effective': set(viewer.permission_keys()) if viewer else set()}
+        return {'username': target.username, 'display_name': target.display_name, 'role_id': target.role_id,
+                'is_active': target.is_active, 'overrides': override_map(target),
+                'effective': set(effective_permissions(target)[1])}
+
+    def save_user(target):
+        creating = target is None
+        is_self = not creating and target.id == current_user.id
+        form = request.form
+        username, display_name = form.get('username', '').strip(), form.get('display_name', '').strip()
+        password = form.get('password', '')
+        if is_self:  # own role / status / permissions are never changed here
+            role, active = target.role, target.is_active
+            overrides = override_map(target)
+        else:
+            role = db.session.get(Role, form.get('role_id', type=int) or 0)
+            active = form.get('is_active') == '1'
+            desired = features.known_keys(form.getlist('perm'))
+            overrides = {}
+            if role is not None and not role.is_super_admin:
+                role_keys = role.permission_keys()
+                overrides = {**{k: 'grant' for k in desired - role_keys}, **{k: 'deny' for k in role_keys - desired}}
+        new_effective = set(features.FEATURES) if role is not None and role.is_super_admin else (
+            (role.permission_keys() if role else set()) | {k for k, e in overrides.items() if e == 'grant'}) - {
+            k for k, e in overrides.items() if e == 'deny'}
+        old_effective = set() if creating else set(effective_permissions(target)[1])
+        state = {'username': username, 'display_name': display_name, 'role_id': role.id if role else None,
+                 'is_active': active, 'overrides': overrides, 'effective': new_effective}
+
+        error = None
+        if not username or not display_name:
+            error = 'نام کاربری و نام نمایشی الزامی هستند.'
+        elif (creating or username != target.username) and not re.fullmatch(r'[A-Za-z0-9_.@-]{2,80}', username):
+            error = 'نام کاربری باید ۲ تا ۸۰ نویسه از حروف انگلیسی، عدد یا . _ - @ باشد.'
+        elif User.query.filter(User.username == username, User.id != (0 if creating else target.id)).first():
+            error = 'این نام کاربری قبلاً ثبت شده است.'
+        elif creating and len(password) < 6:
+            error = 'رمز عبور موقت باید حداقل ۶ کاراکتر باشد.'
+        elif creating and password in DEFAULT_PASSWORDS:
+            error = 'این رمز عبور پیش‌فرض و قابل حدس است؛ رمز دیگری انتخاب کنید.'
+        elif role is None:
+            error = 'یک نقش انتخاب کنید.'
+        elif not is_super_admin_user(current_user) and (role.is_super_admin or is_super_admin_user(target)):
+            error = 'فقط مدیر ارشد می‌تواند حساب مدیر ارشد بسازد یا تغییر دهد.'
+        elif (not creating and is_super_admin_user(target) and target.is_active and (not role.is_super_admin or not active)
+              and other_active_super_admins(target.id) == 0):
+            error = 'این آخرین مدیر ارشد فعال است؛ نمی‌توان آن را غیرفعال یا تنزل داد.'
+        else:
+            error = handout_problem(new_effective - old_effective)
+        if error:
+            flash(error, 'danger')
+            return render_user_form(target, state), 400
+
+        if creating:
+            target = User(must_change_password=True)
+            target.set_password(password)
+            db.session.add(target)
+            before = None
+        else:
+            old = override_map(target)
+            before = {'username': target.username, 'display_name': target.display_name,
+                      'role': target.role.name if target.role else '—', 'is_active': target.is_active,
+                      'grants': {k for k, e in old.items() if e == 'grant'}, 'denies': {k for k, e in old.items() if e == 'deny'}}
+        target.username, target.display_name, target.role_id, target.is_active = username, display_name, role.id, active
+        if not is_self:
+            for o in list(target.overrides):  # diff-based: the (user, key) pair is unique
+                if overrides.get(o.permission_key) != o.effect:
+                    target.overrides.remove(o)
+            db.session.flush()
+            kept = {o.permission_key for o in target.overrides}
+            for key, effect in overrides.items():
+                if key not in kept:
+                    target.overrides.append(UserPermissionOverride(permission_key=key, effect=effect))
+
+        grants = {k for k, e in overrides.items() if e == 'grant'}
+        denies = {k for k, e in overrides.items() if e == 'deny'}
+        changes = []
+        if before is None:
+            changes.append(f'نقش: {role.name}')
+            if not active:
+                changes.append('وضعیت: غیرفعال')
+        else:
+            for label, old_value, new_value in (('نام کاربری', before['username'], username), ('نام نمایشی', before['display_name'], display_name),
+                                                ('نقش', before['role'], role.name)):
+                if old_value != new_value:
+                    changes.append(f'{label}: {old_value} → {new_value}')
+            if before['is_active'] != active:
+                changes.append('وضعیت: ' + ('غیرفعال → فعال' if active else 'فعال → غیرفعال'))
+        if keys_diff(before['grants'] if before else set(), grants):
+            changes.append('اجازه‌ی اضافه: ' + keys_diff(before['grants'] if before else set(), grants))
+        if keys_diff(before['denies'] if before else set(), denies):
+            changes.append('محدودیت: ' + keys_diff(before['denies'] if before else set(), denies))
+        if creating or changes:
+            log_activity('created' if creating else 'updated', 'user', f'{username} ({display_name})', clip('؛ '.join(changes)) or None)
+        db.session.commit()
+        if creating:
+            flash('کاربر جدید افزوده شد. در اولین ورود باید رمز عبور را تغییر دهد.', 'success')
+        else:
+            flash('تغییرات کاربر ذخیره شد.' if changes else 'تغییری برای ذخیره نبود.', 'success')
+        return redirect(url_for('admin_users'))
+
+    def guard_target(target):
+        """Problems with touching another account at all (delete / reset password)."""
+        if target.id == current_user.id:
+            return 'این کار روی حساب خودتان مجاز نیست.'
+        if is_super_admin_user(target) and not is_super_admin_user(current_user):
+            return 'فقط مدیر ارشد می‌تواند حساب مدیر ارشد را تغییر دهد.'
+        return None
+
     @app.route(f'/{admin_prefix}/users')
-    @login_required
+    @require_permission('users.manage')
     def admin_users():
         users = User.query.order_by(User.username).all()
-        return render_template('admin_users.html', users=users)
+        return render_template('admin_users.html', users=users, override_map=override_map,
+                               super_admin_count=other_active_super_admins(0))
+
+    @app.route(f'/{admin_prefix}/users/new')
+    @require_permission('users.manage')
+    def new_user():
+        return render_user_form(None, user_state(None))
 
     @app.route(f'/{admin_prefix}/users', methods=['POST'])
-    @login_required
+    @require_permission('users.manage')
     def create_user():
-        username = request.form.get('username', '').strip()
-        display_name = request.form.get('display_name', '').strip()
+        return save_user(None)
+
+    @app.route(f'/{admin_prefix}/users/<int:user_id>/edit', methods=['GET', 'POST'])
+    @require_permission('users.manage')
+    def edit_user(user_id):
+        target = db.get_or_404(User, user_id)
+        if request.method == 'POST':
+            return save_user(target)
+        return render_user_form(target, user_state(target))
+
+    @app.route(f'/{admin_prefix}/users/<int:user_id>/reset-password', methods=['POST'])
+    @require_permission('users.manage')
+    def reset_user_password(user_id):
+        target = db.get_or_404(User, user_id)
         password = request.form.get('password', '')
-        if not username or not display_name or len(password) < 6:
-            flash('نام کاربری، نام نمایشی و رمز عبور (حداقل ۶ کاراکتر) الزامی هستند.', 'danger')
-        elif User.query.filter_by(username=username).first():
-            flash('این نام کاربری قبلاً ثبت شده است.', 'danger')
-        else:
-            user = User(username=username, display_name=display_name, must_change_password=True)
-            user.set_password(password)
-            db.session.add(user)
-            log_activity('created', 'user', f'{username} ({display_name})')
-            db.session.commit()
-            flash('مدیر جدید افزوده شد. در اولین ورود باید رمز عبور را تغییر دهد.', 'success')
+        error = guard_target(target)
+        if error is None and len(password) < 6:
+            error = 'رمز عبور موقت باید حداقل ۶ کاراکتر باشد.'
+        elif error is None and password in DEFAULT_PASSWORDS:
+            error = 'این رمز عبور پیش‌فرض و قابل حدس است؛ رمز دیگری انتخاب کنید.'
+        if error:
+            flash(error, 'danger')
+            return redirect(url_for('edit_user', user_id=target.id))
+        target.set_password(password)
+        target.must_change_password = True
+        clear_account_lock(target.username)
+        log_activity('updated', 'user', f'{target.username} ({target.display_name})', 'ریست رمز عبور توسط مدیر')
+        db.session.commit()
+        flash('رمز عبور موقت ثبت شد. کاربر در ورود بعدی باید آن را تغییر دهد.', 'success')
         return redirect(url_for('admin_users'))
+
+    @app.route(f'/{admin_prefix}/users/<int:user_id>/unlock', methods=['POST'])
+    @require_permission('users.manage')
+    def unlock_user(user_id):
+        target = db.get_or_404(User, user_id)
+        if account_locked(target.username):
+            clear_account_lock(target.username)
+            log_activity('updated', 'user', f'{target.username} ({target.display_name})', 'باز کردن قفل موقت ورود')
+            db.session.commit()
+            flash('قفل ورود این حساب باز شد.', 'success')
+        return redirect(url_for('admin_users'))
+
+    @app.route(f'/{admin_prefix}/users/access.csv')
+    @require_permission('users.manage')
+    def users_access_csv():
+        """Who can do what: one row per user, one column per feature key.
+        Cell: role = from the role, grant = extra for this user, deny = taken away, super = Super Admin, empty = no."""
+        keys = list(features.FEATURES)
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(['username', 'display_name', 'role', 'active', 'last_login'] + keys)
+        for user in User.query.order_by(User.username).all():
+            is_super, granted = effective_permissions(user)
+            role_keys = user.role.permission_keys() if user.role and not is_super else set()
+            extra = override_map(user)
+            cells = []
+            for key in keys:
+                if is_super:
+                    cells.append('super')
+                elif extra.get(key) == 'deny':
+                    cells.append('deny' if key in role_keys else '')
+                elif key in granted:
+                    cells.append('grant' if extra.get(key) == 'grant' and key not in role_keys else 'role')
+                else:
+                    cells.append('')
+            writer.writerow([outage_report.csv_safe(user.username), outage_report.csv_safe(user.display_name),
+                             outage_report.csv_safe(user.role.name if user.role else ''), 'yes' if user.is_active else 'no',
+                             format_local_datetime(user.last_login_at, '%Y-%m-%d %H:%M') if user.last_login_at else ''] + cells)
+        log_activity('exported', 'user', 'گزارش دسترسی کاربران (CSV)')
+        db.session.commit()
+        name = 'user_access_' + format_local_datetime(datetime.utcnow(), '%Y%m%d_%H%M') + '.csv'
+        return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=name)
 
     @app.route(f'/{admin_prefix}/users/<int:user_id>/delete', methods=['POST'])
-    @login_required
+    @require_permission('users.manage')
     def delete_user(user_id):
         target = db.get_or_404(User, user_id)
-        if target.id == current_user.id:
-            flash('نمی‌توانید حساب کاربری خودتان را حذف کنید.', 'danger')
-        elif User.query.count() <= 1:
-            flash('حداقل یک مدیر باید در سامانه باقی بماند.', 'danger')
+        error = guard_target(target)
+        if error is None and is_super_admin_user(target) and target.is_active and other_active_super_admins(target.id) == 0:
+            error = 'این آخرین مدیر ارشد فعال است و قابل حذف نیست.'
+        if error:
+            flash(error, 'danger')
         else:
-            log_activity('deleted', 'user', f'{target.username} ({target.display_name})')
+            log_activity('deleted', 'user', f'{target.username} ({target.display_name})',
+                         f'نقش: {target.role.name}' if target.role else None)
             db.session.delete(target)
             db.session.commit()
-            flash('مدیر حذف شد.', 'success')
+            flash('کاربر حذف شد.', 'success')
         return redirect(url_for('admin_users'))
 
+    # ---- Roles -----------------------------------------------------------------------------------
+    def render_role_form(role, state):
+        return render_template('role_form.html', role=role, state=state, groups=features.grouped())
+
+    def save_role(role):
+        creating = role is None
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()[:300]
+        desired = features.known_keys(request.form.getlist('perm'))
+        before = set() if creating else role.permission_keys()
+        state = {'name': name, 'description': description, 'permissions': desired}
+        error = None
+        if not name:
+            error = 'نام نقش الزامی است.'
+        elif Role.query.filter(func.lower(Role.name) == name.lower(), Role.id != (0 if creating else role.id)).first():
+            error = 'نقشی با این نام وجود دارد.'
+        else:
+            error = handout_problem(desired - before)
+        if error:
+            flash(error, 'danger')
+            return render_role_form(role, state), 400
+        if creating:
+            role = Role(key='custom_' + secrets.token_hex(4), is_system=False)
+            db.session.add(role)
+            old_name = None
+        else:
+            old_name = role.name
+        role.name, role.description = name, description or None
+        for p in list(role.permissions):  # diff-based: the (role, key) pair is unique
+            if p.permission_key not in desired:
+                role.permissions.remove(p)
+        db.session.flush()
+        kept = {p.permission_key for p in role.permissions}
+        for key in sorted(desired - kept):
+            role.permissions.append(RolePermission(permission_key=key))
+        changes = []
+        if old_name is not None and old_name != name:
+            changes.append(f'نام: {old_name} → {name}')
+        if keys_diff(before, desired):
+            changes.append('دسترسی‌ها: ' + keys_diff(before, desired))
+        if creating or changes:
+            log_activity('created' if creating else 'updated', 'role', name, clip('؛ '.join(changes)) or None)
+        db.session.commit()
+        flash('نقش ذخیره شد.' if changes or creating else 'تغییری برای ذخیره نبود.', 'success')
+        return redirect(url_for('admin_roles'))
+
+    @app.route(f'/{admin_prefix}/roles')
+    @require_permission('roles.manage')
+    def admin_roles():
+        counts = dict(db.session.query(User.role_id, func.count(User.id)).group_by(User.role_id).all())
+        return render_template('roles.html', roles=all_roles(), counts=counts, total=len(features.FEATURES))
+
+    @app.route(f'/{admin_prefix}/roles/new', methods=['GET', 'POST'])
+    @require_permission('roles.manage')
+    def new_role():
+        if request.method == 'POST':
+            return save_role(None)
+        source = db.session.get(Role, request.args.get('copy', type=int) or 0)
+        state = {'name': '', 'description': '', 'permissions': set()}
+        if source is not None:
+            keys = set(features.FEATURES) if source.is_super_admin else source.permission_keys()
+            state = {'name': f'کپی {source.name}', 'description': source.description or '', 'permissions': keys}
+        return render_role_form(None, state)
+
+    @app.route(f'/{admin_prefix}/roles/<int:role_id>/edit', methods=['GET', 'POST'])
+    @require_permission('roles.manage')
+    def edit_role(role_id):
+        role = db.get_or_404(Role, role_id)
+        if role.is_super_admin:
+            flash('نقش مدیر ارشد همیشه همه‌ی دسترسی‌ها را دارد و قابل ویرایش نیست.', 'warning')
+            return redirect(url_for('admin_roles'))
+        if request.method == 'POST':
+            return save_role(role)
+        return render_role_form(role, {'name': role.name, 'description': role.description or '', 'permissions': role.permission_keys()})
+
+    @app.route(f'/{admin_prefix}/roles/<int:role_id>/delete', methods=['POST'])
+    @require_permission('roles.manage')
+    def delete_role(role_id):
+        role = db.get_or_404(Role, role_id)
+        users = User.query.filter_by(role_id=role.id).count()
+        if role.is_system:
+            flash('نقش‌های سیستمی قابل حذف نیستند.', 'danger')
+        elif users:
+            flash(f'این نقش به {users} کاربر داده شده است؛ ابتدا نقش آن‌ها را عوض کنید.', 'danger')
+        else:
+            log_activity('deleted', 'role', role.name, clip('دسترسی‌ها: ' + ' '.join(sorted(role.permission_keys()))))
+            db.session.delete(role)
+            db.session.commit()
+            flash('نقش حذف شد.', 'success')
+        return redirect(url_for('admin_roles'))
+
     @app.route(f'/{admin_prefix}/extensions/new', methods=['GET', 'POST'])
-    @login_required
+    @require_permission('extensions.create')
     def create_extension():
         if request.method == 'POST':
             return save_extension()
         return render_template('extension_form.html', entry=None, departments=Department.query.order_by(Department.name).all())
 
     @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/edit', methods=['GET', 'POST'])
-    @login_required
+    @require_permission('extensions.edit')
     def edit_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
         if request.method == 'POST':
@@ -1588,7 +2169,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/delete', methods=['POST'])
-    @login_required
+    @require_permission('extensions.delete')
     def delete_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
         entry.is_deleted = True
@@ -1600,7 +2181,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/delete-all', methods=['POST'])
-    @login_required
+    @require_permission('extensions.delete_all')
     def delete_all_extensions():
         if request.form.get('confirmation', '').strip().lower() not in ('پاک کن', 'clear'):
             flash('برای پاک‌سازی، عبارت «پاک کن» را دقیق وارد کنید.', 'danger')
@@ -1613,7 +2194,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/restore', methods=['POST'])
-    @login_required
+    @require_permission('trash.restore')
     def restore_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
         entry.is_deleted = False
@@ -1625,7 +2206,7 @@ def create_app():
         return redirect(url_for('trash'))
 
     @app.route(f'/{admin_prefix}/extensions/<int:entry_id>/purge', methods=['POST'])
-    @login_required
+    @require_permission('trash.purge')
     def purge_extension(entry_id):
         entry = db.get_or_404(Extension, entry_id)
         log_activity('deleted', 'extension', f'{entry.extension} — {entry.title}', details='حذف همیشگی')
@@ -1636,13 +2217,13 @@ def create_app():
         return redirect(url_for('trash'))
 
     @app.route(f'/{admin_prefix}/trash')
-    @login_required
+    @require_permission('trash.view')
     def trash():
         deleted_entries = Extension.query.filter_by(is_deleted=True).order_by(Extension.deleted_at.desc()).all()
         return render_template('trash.html', entries=deleted_entries)
 
     @app.route(f'/{admin_prefix}/extensions/bulk-activate', methods=['POST'])
-    @login_required
+    @require_permission('extensions.edit')
     def bulk_activate():
         ids = request.form.getlist('selected_ids', type=int)
         if not ids:
@@ -1656,7 +2237,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/bulk-deactivate', methods=['POST'])
-    @login_required
+    @require_permission('extensions.edit')
     def bulk_deactivate():
         ids = request.form.getlist('selected_ids', type=int)
         if not ids:
@@ -1670,7 +2251,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/extensions/bulk-delete', methods=['POST'])
-    @login_required
+    @require_permission('extensions.delete')
     def bulk_delete():
         ids = request.form.getlist('selected_ids', type=int)
         if not ids:
@@ -1684,7 +2265,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/departments', methods=['POST'])
-    @login_required
+    @require_permission('departments.manage')
     def create_department():
         name = request.form.get('name', '').strip()
         working_hours = request.form.get('working_hours', '').strip() or None
@@ -1699,7 +2280,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/departments/<int:department_id>/edit', methods=['POST'])
-    @login_required
+    @require_permission('departments.manage')
     def edit_department(department_id):
         department = db.get_or_404(Department, department_id)
         name = request.form.get('name', '').strip()
@@ -1718,7 +2299,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/departments/<int:department_id>/delete', methods=['POST'])
-    @login_required
+    @require_permission('departments.manage')
     def delete_department(department_id):
         department = db.get_or_404(Department, department_id)
         Extension.query.filter_by(department_id=department.id).update({Extension.department_id: None}, synchronize_session=False)
@@ -1730,7 +2311,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/backup')
-    @login_required
+    @require_permission('backup.download')
     def download_backup():
         db_path = os.path.join(BASE_DIR, 'hotel_extensions.db')
         if not os.path.isfile(db_path):
@@ -1748,7 +2329,7 @@ def create_app():
         return send_file(snapshot, mimetype='application/octet-stream', as_attachment=True, download_name=f'hotel_extensions_backup_{stamp}.db')
 
     @app.route(f'/{admin_prefix}/export/<fmt>')
-    @login_required
+    @require_permission('extensions.export')
     def export_data(fmt):
         entries = Extension.query.filter_by(is_deleted=False).order_by(Extension.extension).all()
         response = build_tabular_export(fmt, entries, include_contact=True, include_network=True)
@@ -1757,6 +2338,7 @@ def create_app():
         return response
 
     @app.route('/export/<fmt>')
+    @public_endpoint
     def public_export(fmt):
         if fmt not in ('csv', 'xlsx'):
             return 'فرمت نامعتبر است.', 404
@@ -1767,6 +2349,7 @@ def create_app():
         return response
 
     @app.route('/export/pdf')
+    @public_endpoint
     def public_export_pdf():
         entries, _, filters_active = build_filtered_query(request.args)
         entries = entries.all()
@@ -1783,7 +2366,7 @@ def create_app():
         return send_file(output, mimetype='application/pdf', as_attachment=True, download_name='hotel_extensions.pdf')
 
     @app.route(f'/{admin_prefix}/export/pdf')
-    @login_required
+    @require_permission('extensions.export')
     def export_pdf():
         department_id = request.args.get('department_id', type=int)
         # The printed directory lists staff/office extensions only (no guest rooms).
@@ -1805,7 +2388,7 @@ def create_app():
         return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=name)
 
     @app.route(f'/{admin_prefix}/import/preview', methods=['POST'])
-    @login_required
+    @require_permission('extensions.import')
     def import_preview():
         _cleanup_stale_imports()
         file = request.files.get('file')
@@ -1870,7 +2453,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/import/confirm', methods=['POST'])
-    @login_required
+    @require_permission('extensions.import')
     def import_confirm():
         token = session.pop('import_token', None)
         session.pop('import_original_name', None)
@@ -1941,7 +2524,7 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/import/cancel', methods=['POST'])
-    @login_required
+    @require_permission('extensions.import')
     def import_cancel():
         token = session.pop('import_token', None)
         session.pop('import_original_name', None)
@@ -2010,7 +2593,7 @@ def create_app():
         }
 
     @app.route(f'/{admin_prefix}/mac-import')
-    @login_required
+    @require_permission('extensions.mac_import')
     def mac_import():
         _cleanup_stale_imports()
         path = find_mac_temp(session.get('mac_token'))
@@ -2027,7 +2610,7 @@ def create_app():
                                shown=shown[:500], shown_total=len(shown), action_labels=MAC_ACTION_LABELS, **ctx)
 
     @app.route(f'/{admin_prefix}/mac-import/upload', methods=['POST'])
-    @login_required
+    @require_permission('extensions.mac_import')
     def mac_import_upload():
         _cleanup_stale_imports()
         file = request.files.get('file')
@@ -2045,7 +2628,7 @@ def create_app():
         return redirect(url_for('mac_import'))
 
     @app.route(f'/{admin_prefix}/mac-import/apply', methods=['POST'])
-    @login_required
+    @require_permission('extensions.mac_import')
     def mac_import_apply():
         path = find_mac_temp(session.get('mac_token'))
         ctx = load_mac_context(path) if path else None
@@ -2072,14 +2655,14 @@ def create_app():
         return redirect(url_for('admin'))
 
     @app.route(f'/{admin_prefix}/mac-import/cancel', methods=['POST'])
-    @login_required
+    @require_permission('extensions.mac_import')
     def mac_import_cancel():
         clear_mac_temp()
         return redirect(url_for('admin'))
 
     # ---- PBX page: sync status, new extensions to review, offline phones ---------------
     @app.route(f'/{admin_prefix}/pbx')
-    @login_required
+    @require_permission('pbx.view')
     def pbx_status():
         live = Extension.query.filter(Extension.is_deleted == False)  # noqa: E712
         table = {kind: {'online': 0, 'offline': 0, 'unknown': 0, 'none': 0} for kind in EXTENSION_KINDS}
@@ -2099,7 +2682,7 @@ def create_app():
                                not_on_pbx=not_on_pbx, has_synced=has_synced, mismatches=mismatches)
 
     @app.route(f'/{admin_prefix}/pbx/sync', methods=['POST'])
-    @login_required
+    @require_permission('pbx.sync')
     def pbx_sync_now():
         if not pbx_config()['enabled']:
             flash('اتصال به PBX تنظیم نشده است.', 'warning')
@@ -2113,7 +2696,7 @@ def create_app():
         return redirect(url_for('pbx_status'))
 
     @app.route(f'/{admin_prefix}/pbx/set-kind', methods=['POST'])
-    @login_required
+    @require_permission('pbx.review')
     def pbx_set_kind():
         entry = db.session.get(Extension, request.form.get('id', type=int) or 0)
         kind = request.form.get('kind', '')
@@ -2136,10 +2719,11 @@ def create_app():
         return response
 
     @app.route('/api/extensions/status')
+    @public_endpoint
     def api_extensions_status():
         """Phone state per extension. The public sees online / offline / unknown for the
-        public directory (staff) only; a signed-in admin also gets rooms, latency, IP and sync info."""
-        is_admin = current_user.is_authenticated
+        public directory (staff) only; a user with pbx.view also gets rooms, latency, IP and sync info."""
+        is_admin = user_can(current_user, 'pbx.view')
         query = Extension.query.filter(Extension.is_deleted == False, Extension.reg_status != None)  # noqa: E711,E712
         if not is_admin:
             query = query.filter(Extension.kind == 'staff')
@@ -2186,7 +2770,7 @@ def create_app():
         return 'stopped' if outage.end_reason == 'stopped' else 'ended'
 
     @app.route(f'/{admin_prefix}/outages')
-    @login_required
+    @require_permission('outages.view')
     def outages_report():
         filters = outage_filters(request.args)
         now = datetime.utcnow()
@@ -2206,7 +2790,7 @@ def create_app():
                                enabled=cfg['outage_enabled'] and cfg['enabled'], keep_days=cfg['outage_keep_days'])
 
     @app.route(f'/{admin_prefix}/outages/export.csv')
-    @login_required
+    @require_permission('outages.export')
     def outages_export():
         filters = outage_filters(request.args)
         rows = outage_query(filters).order_by(PhoneOutage.started_at.desc(), PhoneOutage.id.desc()).limit(OUTAGE_CSV_LIMIT).all()
@@ -2223,12 +2807,11 @@ def create_app():
         return send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=name)
 
     @app.route('/api/outages/alerts')
+    @require_permission('outages.alerts')
     def api_outage_alerts():
         """Admin only. New outage / recovery alerts since the event id `after` (the browser keeps the last one it saw).
         Without a usable `after` (first call, or the database was reset) only `latest_id` comes back, so a
         freshly opened browser starts from 'now' instead of replaying history."""
-        if not current_user.is_authenticated:
-            return no_store(jsonify(ok=False, error='unauthorized')), 401
         cfg = pbx_config()
         latest = db.session.query(func.max(OutageEvent.id)).scalar() or 0
         payload = {'ok': True, 'enabled': cfg['alerts_enabled'], 'latest_id': latest, 'alerts': []}
@@ -2242,18 +2825,17 @@ def create_app():
         return no_store(jsonify(payload))
 
     @app.route('/api/pbx/sync-now', methods=['POST'])
+    @require_permission('pbx.sync')
     def api_pbx_sync_now():
-        """Admin only: run one sync cycle right now and return its summary (CSRF token required in X-CSRFToken)."""
-        if not current_user.is_authenticated:
-            return no_store(jsonify(ok=False, error='unauthorized')), 401
-        if not getattr(current_user, 'is_admin', False):
-            return no_store(jsonify(ok=False, error='forbidden')), 403
+        """Run one sync cycle right now and return its summary (CSRF token required in X-CSRFToken)."""
         if not pbx_config()['enabled']:
             return no_store(jsonify(ok=False, error='اتصال به PBX تنظیم نشده است.')), 409
         ok, result = run_pbx_sync(app)
         if ok:
             return no_store(jsonify(ok=True, summary=result, last_sync=iso_utc(pbx_sync_state['last_success'])))
         return no_store(jsonify(ok=False, error=str(result))), (409 if pbx_sync_lock.locked() else 502)
+
+    features.check_menu_endpoints(app.view_functions)
 
     # Background polling; PBX_SYNC_AUTOSTART=0 disables the thread (the page's button still works).
     in_reloader_parent = os.getenv('FLASK_DEBUG', '0') == '1' and os.getenv('WERKZEUG_RUN_MAIN') != 'true'
@@ -2440,9 +3022,54 @@ def flag_default_passwords(app):
         app.logger.warning('Default password still in use; password change forced for: %s', ', '.join(flagged))
 
 
+def backup_before_rbac_migration(engine, db_path):
+    """One-time safety copy of an existing database, taken right before the RBAC tables are first added.
+    Returns the backup path, or None when there is nothing to back up (fresh install / already migrated).
+    A failed backup raises, so the migration never runs without one."""
+    from sqlalchemy import inspect
+    tables = inspect(engine).get_table_names()
+    if 'user' not in tables or 'role' in tables or not os.path.isfile(db_path):
+        return None
+    backup_dir = os.path.join(BASE_DIR, 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    path = os.path.join(backup_dir, 'hotel_extensions_pre_rbac_' + datetime.utcnow().strftime('%Y%m%d_%H%M%S') + '.db')
+    with open(path, 'wb') as f:
+        f.write(make_db_backup(db_path).getvalue())
+    return path
+
+
+def seed_roles():
+    """Create the built-in roles that are missing. Existing roles are never touched, so permission
+    changes made by the admins survive restarts."""
+    for key, name, description, permissions in features.SYSTEM_ROLES:
+        if Role.query.filter_by(key=key).first() is None:
+            role = Role(key=key, name=name, description=description, is_system=True)
+            role.permissions = [RolePermission(permission_key=p) for p in permissions or ()]
+            db.session.add(role)
+    db.session.commit()
+
+
+def migrate_users_to_roles():
+    """Before RBAC every account had full access, so every existing account becomes Super Admin.
+    Runs only while no user has a role yet: an account that ends up without a role later is never promoted."""
+    if User.query.filter(User.role_id.isnot(None)).first() is not None:
+        return 0
+    users = User.query.filter(User.role_id.is_(None)).all()
+    if not users:
+        return 0
+    super_admin = Role.query.filter_by(key=features.SUPER_ADMIN).one()
+    for user in users:
+        user.role_id = super_admin.id
+    db.session.add(ActivityLog(actor='system', action='updated', entity_type='user',
+                               entity_label=f'مهاجرت به نقش‌ها: {len(users)} کاربر → {super_admin.name}'))
+    db.session.commit()
+    return len(users)
+
+
 def seed_data():
     if not User.query.first():
-        user = User(username='admin', display_name='مدیر سیستم', must_change_password=True)
+        super_admin = Role.query.filter_by(key=features.SUPER_ADMIN).one()
+        user = User(username='admin', display_name='مدیر سیستم', must_change_password=True, role_id=super_admin.id)
         user.set_password('admin123')
         db.session.add(user)
     if not Department.query.first():

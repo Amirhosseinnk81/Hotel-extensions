@@ -17,3 +17,5 @@ panel.html
 page.html
 cp.js
 *.patch
+# safety copies made automatically before database migrations
+backups/

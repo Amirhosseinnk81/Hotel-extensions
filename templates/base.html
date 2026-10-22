@@ -24,7 +24,7 @@
 <link href="{{ vendor_asset('bootstrap.rtl.min.css' if lang == 'fa' else 'bootstrap.min.css') }}" rel="stylesheet">
 <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
-<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% if current_user.is_authenticated and pbx_config().enabled and pbx_config().alerts_enabled %} data-alerts-url="{{ url_for('api_outage_alerts') }}" data-outages-url="{{ url_for('outages_report') }}"{% endif %}>
+<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% if can('outages.alerts') and pbx_config().enabled and pbx_config().alerts_enabled %} data-alerts-url="{{ url_for('api_outage_alerts') }}" data-outages-url="{{ url_for('outages_report') }}"{% endif %}>
 <a class="skip-link no-print" href="#main">{{ t('پرش به محتوای اصلی') }}</a>
 <div id="updateToast" class="update-toast no-print" role="status" hidden>
   <span>{{ t('یک به‌روزرسانی جدید موجود است.') }}</span>
@@ -39,7 +39,7 @@
 {% endmacro %}
 
 {% macro alert_bell() %}
-  {% if current_user.is_authenticated and pbx_config().enabled and pbx_config().alerts_enabled %}
+  {% if can('outages.alerts') and pbx_config().enabled and pbx_config().alerts_enabled %}
   <button type="button" id="alertToggle" class="alert-bell" aria-pressed="false" title="{{ t('هشدار قطعی تلفن‌ها (خاموش)') }}" aria-label="{{ t('هشدار قطعی تلفن‌ها') }}"><span aria-hidden="true">{{ ico('bell') }}</span></button>
   {% endif %}
 {% endmacro %}
@@ -59,17 +59,14 @@
 
 {% if in_shell %}
 {# ===================== Admin shell: sidebar + top bar ===================== #}
-{% set nav_groups = [
-  ('دفترچه', [('extensions', 'admin', 'list', 'لیست داخلی‌ها'), ('mac', 'mac_import', 'upload', 'ایمپورت MAC تلفن‌ها')]),
-  ('پایش', [('pbx', 'pbx_status', 'phone', 'وضعیت PBX'), ('outages', 'outages_report', 'activity', 'گزارش قطعی‌ها')]),
-  ('سیستم', [('trash', 'trash', 'trash', 'سطل بازیافت'), ('admins', 'admin_users', 'users', 'مدیریت ادمین‌ها'), ('activity', 'activity_log', 'clock', 'لاگ فعالیت‌ها')])
-] %}
+{# Built from features.py: only the pages this user may open; a group with none of them is left out #}
+{% set nav_groups = admin_menu() %}
 {% set ns = namespace(label='نمای کلی') %}
 {% for group, items in nav_groups %}{% for key, endpoint, icon, label in items %}{% if key == nav %}{% set ns.label = label %}{% endif %}{% endfor %}{% endfor %}
 {% if nav == 'password' %}{% set ns.label = 'تغییر رمز عبور' %}{% endif %}
 <div class="app-shell">
   <aside class="sidebar no-print" id="sidebar" aria-label="{{ t('پنل مدیریت') }}">
-    <a class="sb-brand" href="{{ url_for('admin') }}">
+    <a class="sb-brand" href="{{ admin_home() or url_for('index') }}">
       <span class="brand-mark">HA</span>
       <span class="brand-text"><strong>{{ t('هتل آراز') }}</strong><small>{{ t('پنل مدیریت') }}</small></span>
     </a>
@@ -87,7 +84,7 @@
       <a class="lang-btn" href="{{ url_for('set_language', code=other_lang) }}" hreflang="{{ other_lang }}">{{ ico('globe') }}<span>{{ 'English' if lang == 'fa' else 'فارسی' }}</span></a>
       <div class="sb-user">
         <span class="avatar" aria-hidden="true">{{ (t(current_user.display_name or current_user.username or '?'))[:1]|upper }}</span>
-        <span class="sb-user-text"><strong>{{ current_user.display_name or current_user.username }}</strong><small>{{ t('ادمین') }}</small></span>
+        <span class="sb-user-text"><strong>{{ current_user.display_name or current_user.username }}</strong><small>{{ current_user.role.name if current_user.role else t('بدون نقش') }}</small></span>
         <form method="post" action="{{ url_for('logout') }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="icon-btn" title="{{ t('خروج') }}" aria-label="{{ t('خروج') }}">{{ ico('logout') }}</button>
@@ -102,7 +99,7 @@
       <nav class="crumbs" aria-label="breadcrumb"><span>{{ t('هتل آراز') }}</span><i aria-hidden="true">/</i><strong>{{ t(ns.label) }}</strong></nav>
       <div class="topbar-tools">
         <a class="pill-link" href="{{ url_for('index') }}">{{ ico('book') }}<span>{{ t('دفترچه عمومی') }}</span></a>
-        <a class="pill-link" href="{{ url_for('download_backup') }}" title="{{ t('دانلود بکاپ دیتابیس') }}">{{ ico('download') }}<span>{{ t('بکاپ') }}</span></a>
+        {% if can('backup.download') %}<a class="pill-link" href="{{ url_for('download_backup') }}" title="{{ t('دانلود بکاپ دیتابیس') }}">{{ ico('download') }}<span>{{ t('بکاپ') }}</span></a>{% endif %}
         {{ alert_bell() }}
       </div>
     </header>
@@ -122,7 +119,7 @@
     <nav class="header-nav">
       <a class="header-link" href="{{ url_for('index') }}">{{ t('صفحه اصلی') }}</a>
       {% if current_user.is_authenticated %}
-        <a class="header-link" href="{{ url_for('admin') }}">{{ t('مدیریت') }}</a>
+        {% if admin_home() %}<a class="header-link" href="{{ admin_home() }}">{{ t('مدیریت') }}</a>{% endif %}
         <form method="post" action="{{ url_for('logout') }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-gold btn-sm">{{ t('خروج') }}</button>

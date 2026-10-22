@@ -1,41 +1,47 @@
 {% extends 'base.html' %}
 {% set shell = 'admin' %}{% set nav = 'admins' %}
-{% block title %}Manage Admins{% endblock %}
+{% block title %}Users{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('مدیران سامانه') }}</h1></div>
-  <a href="{{ url_for('admin') }}" class="back-link">{{ t('← بازگشت به مدیریت') }}</a>
-</div>
-
-<div class="action-card mb-4" style="max-width:520px">
-  <div class="action-card-head"><span class="action-icon">＋</span><h6>{{ t('افزودن مدیر جدید') }}</h6></div>
-  <p class="action-desc">{{ t('کاربر جدید در اولین ورود موظف به تغییر رمز عبور است.') }}</p>
-  <form action="{{ url_for('create_user') }}" method="post" class="d-flex flex-column gap-2">
-    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
-    <input name="username" class="form-control form-control-sm" placeholder="{{ t('نام کاربری (انگلیسی)') }}" required>
-    <input name="display_name" class="form-control form-control-sm" placeholder="{{ t('نام نمایشی') }}" required>
-    <input type="password" name="password" class="form-control form-control-sm" placeholder="{{ t('رمز عبور موقت (حداقل ۶ کاراکتر)') }}" minlength="6" required>
-    <button class="btn btn-outline-primary btn-sm">{{ t('افزودن مدیر') }}</button>
-  </form>
+  <div><p class="eyebrow mb-1">{{ t('پنل مدیریت') }}</p><h1 class="h2 mb-0">{{ t('کاربران') }}</h1></div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('users_access_csv') }}" class="btn btn-outline-secondary" title="{{ t('چه کسی به چه چیزی دسترسی دارد') }}">⬇ {{ t('گزارش دسترسی‌ها (CSV)') }}</a>
+    {% if can('roles.manage') %}<a href="{{ url_for('admin_roles') }}" class="btn btn-outline-secondary">{{ t('نقش‌ها و دسترسی‌ها') }}</a>{% endif %}
+    <a href="{{ url_for('new_user') }}" class="btn btn-primary">{{ t('+ افزودن کاربر') }}</a>
+  </div>
 </div>
 
 <div class="panel p-0 overflow-hidden">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>{{ t('نام کاربری') }}</th><th>{{ t('نام نمایشی') }}</th><th>{{ t('وضعیت') }}</th><th></th></tr></thead>
+      <thead><tr><th>{{ t('نام کاربری') }}</th><th>{{ t('نام نمایشی') }}</th><th>{{ t('نقش') }}</th><th>{{ t('وضعیت') }}</th><th>{{ t('آخرین ورود') }}</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
-        <tr>
-          <td class="fw-bold">{{ u.username }}</td>
+        {% set extra = override_map(u) %}
+        <tr{% if not u.is_active %} class="text-muted"{% endif %}>
+          <td class="fw-bold" dir="ltr">{{ u.username }}</td>
           <td>{{ u.display_name }}{% if u.id == current_user.id %} <small class="text-muted">{{ t('(خودتان)') }}</small>{% endif %}</td>
-          <td>{% if u.must_change_password %}<span class="badge text-bg-warning">{{ t('در انتظار تغییر رمز') }}</span>{% else %}<span class="badge text-bg-success">{{ t('فعال') }}</span>{% endif %}</td>
-          <td class="text-nowrap">
-            {% if u.id != current_user.id %}
-            <form action="{{ url_for('delete_user', user_id=u.id) }}" method="post" class="d-inline" data-confirm="{{ t('این مدیر حذف شود؟') }}" data-confirm-title="{{ t('حذف مدیر') }}" data-confirm-label="{{ t('بله، حذف کن') }}">
+          <td>
+            {% if u.role %}<span class="badge {{ 'text-bg-warning' if u.role.is_super_admin else 'text-bg-light' }}">{{ u.role.name }}</span>{% else %}<span class="badge text-bg-danger">{{ t('بدون نقش') }}</span>{% endif %}
+            {% set grants = extra.values()|select('equalto', 'grant')|list|length %}{% set denies = extra.values()|select('equalto', 'deny')|list|length %}
+            {% if grants and not (u.role and u.role.is_super_admin) %}<span class="perm-badge perm-src-grant" title="{{ t('دسترسی اضافه') }}">+{{ grants }}</span>{% endif %}
+            {% if denies and not (u.role and u.role.is_super_admin) %}<span class="perm-badge perm-src-deny" title="{{ t('دسترسی محدودشده') }}">−{{ denies }}</span>{% endif %}
+          </td>
+          <td>
+            {% if not u.is_active %}<span class="badge text-bg-secondary">{{ t('غیرفعال') }}</span>
+            {% elif u.must_change_password %}<span class="badge text-bg-warning">{{ t('در انتظار تغییر رمز') }}</span>
+            {% else %}<span class="badge text-bg-success">{{ t('فعال') }}</span>{% endif %}
+            {% if account_locked(u.username) %}<span class="badge text-bg-danger">{{ t('قفل موقت') }}</span>{% endif %}
+          </td>
+          <td class="text-nowrap"><small>{{ (u.last_login_at | local_dt) if u.last_login_at else '—' }}</small></td>
+          <td class="text-nowrap text-end">
+            {% if account_locked(u.username) %}
+            <form action="{{ url_for('unlock_user', user_id=u.id) }}" method="post" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
-              <button class="btn btn-sm btn-outline-danger">{{ t('حذف') }}</button>
+              <button class="btn btn-sm btn-outline-danger">{{ t('باز کردن قفل') }}</button>
             </form>
             {% endif %}
+            <a href="{{ url_for('edit_user', user_id=u.id) }}" class="btn btn-sm btn-light">{{ t('ویرایش') }}</a>
           </td>
         </tr>
         {% endfor %}
