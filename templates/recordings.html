@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'recordings' %}
+{% block title %}Call Recordings{% endblock %}
+{% block content %}
+{% set base_args = filters.as_args() %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4">
+  <h1 class="h2 mb-1">{{ t('ضبط مکالمات') }}</h1>
+  <p class="text-muted mb-0">{{ t('همان ضبط‌هایی که ایزابل انجام و نگه‌داری می‌کند. از این صفحه نمی‌شود ضبطی را حذف یا ویرایش کرد و فایلی روی سرور برنامه ذخیره نمی‌شود.') }}</p>
+</div>
+
+<div class="alert alert-warning py-2">
+  🔒 {{ t('هر پخش و هر دانلود با نام شما، زمان و IP در لاگ فعالیت‌ها ثبت می‌شود.') }}
+  {% if can('recordings.download') and per_hour > 0 %}{{ t('سقف دانلود برای هر کاربر:') }} {{ per_hour }} {{ t('فایل در ساعت.') }}{% endif %}
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('اتصال به CDR ایزابل هنوز تنظیم نشده است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% elif not web_ready and (can('recordings.listen') or can('recordings.download')) %}
+  <div class="alert alert-warning">{{ t('برای پخش و دانلود، اتصال وب‌پنل ایزابل (PBX_WEB_* یا PBX_REC_WEB_*) لازم است.') }}</div>
+{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% for w in warnings %}<div class="alert alert-warning py-2">{{ w }}</div>{% endfor %}
+
+<form class="search-card outage-filters mb-3 no-print" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="r-from">{{ t('از تاریخ') }}</label>
+      <input id="r-from" name="from" value="{{ (jalali_text(filters.day_from))|e }}" class="form-control" dir="ltr" inputmode="numeric" placeholder="1405/08/17" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="r-to">{{ t('تا تاریخ') }}</label>
+      <input id="r-to" name="to" value="{{ (jalali_text(filters.day_to))|e }}" class="form-control" dir="ltr" inputmode="numeric" placeholder="1405/08/17" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="r-ext">{{ t('داخلی') }}</label>
+      <input id="r-ext" name="extension" value="{{ (filters.extension)|e }}" class="form-control" dir="ltr" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-3">
+      <label class="form-label" for="r-num">{{ t('شماره‌ی تماس') }}</label>
+      <input id="r-num" name="number" value="{{ (filters.number)|e }}" class="form-control" dir="ltr" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="col-12 col-lg-3 d-grid"><button class="btn btn-primary">{{ t('نمایش') }}</button></div>
+  </div>
+  <div class="outage-chips mt-2">
+    {% for key, label in (('today', 'امروز'), ('yesterday', 'دیروز'), ('7d', '۷ روز'), ('30d', '۳۰ روز')) %}
+      <a class="range-chip" href="{{ url_for('recordings_list', range=key) }}">{{ t(label) }}</a>
+    {% endfor %}
+  </div>
+</form>
+
+<div class="results-bar mb-3"><h5 class="mb-0">{{ total }} {{ t('تماس ضبط‌شده') }}</h5></div>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle compact-table">
+    <thead><tr><th>{{ t('زمان') }}</th><th>{{ t('از') }}</th><th>{{ t('به') }}</th><th>{{ t('مدت مکالمه') }}</th><th>{{ t('ضبط') }}</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="nowrap"><bdi dir="ltr">{{ r.time }}</bdi></td>
+          <td dir="ltr" class="text-start">{{ r.src or '—' }}</td>
+          <td dir="ltr" class="text-start">{{ r.dst or '—' }}</td>
+          <td class="nowrap"><bdi dir="ltr">{{ format_seconds(r.billsec) }}</bdi></td>
+          <td class="recording-cell">
+            {% if not r.playable %}
+              <small class="text-muted">{{ t('نام فایل ضبط معتبر نیست') }}</small>
+            {% elif web_ready %}
+              {% if can('recordings.listen') %}
+                <audio controls preload="none" src="{{ url_for('recording_play', uniqueid=r.uniqueid) }}"></audio>
+              {% endif %}
+              {% if can('recordings.download') %}
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('recording_download', uniqueid=r.uniqueid) }}">⬇ {{ t('دانلود') }}</a>
+              {% endif %}
+              {% if not can('recordings.listen') and not can('recordings.download') %}<small class="text-muted">{{ t('اجازه‌ی پخش ندارید') }}</small>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center py-4 text-muted">{{ t('ضبطی با این فیلترها پیدا نشد.') if configured and not error else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+  <nav class="pagination-bar mt-3 no-print" aria-label="{{ t('صفحه‌بندی') }}">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {{ 'disabled' if page <= 1 }}"><a class="page-link" href="{{ url_for('recordings_list', **dict(base_args, page=page-1)) }}">{{ t('قبلی') }}</a></li>
+      {% for p in range(1, pages + 1) %}
+        {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+          <li class="page-item {{ 'active' if p == page }}"><a class="page-link" href="{{ url_for('recordings_list', **dict(base_args, page=p)) }}">{{ p }}</a></li>
+        {% elif p == page - 2 or p == page + 2 %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if page >= pages }}"><a class="page-link" href="{{ url_for('recordings_list', **dict(base_args, page=page+1)) }}">{{ t('بعدی') }}</a></li>
+    </ul>
+  </nav>
+{% endif %}
+{% endblock %}

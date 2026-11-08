@@ -9,6 +9,8 @@ Only two AMI actions are used, both read-only:
   * SIPshowpeer  - one peer in detail (we only use its SIP-Useragent)
 Both need "write = reporting" (or "system") on the AMI user and no "read"
 class at all, because the client logs in with "Events: off".
+The login uses AMI's MD5 challenge by default, so the secret never crosses the network
+(PBX_AMI_AUTH=plain falls back to the classic clear-text login).
 
 Field names and status strings were checked against the Asterisk 18.6.0 source
 (channels/chan_sip.c): PeerEntry events, the SIPshowpeer response and the
@@ -19,6 +21,7 @@ this module, IssabelWebScraper, logs in to the Issabel web panel like a browser 
 reads the Operator Panel status stream (or the old "Asterisk Info" page) instead. It is read-only as well and yields the same
 PeerState objects, so the database side does not care which source was used.
 """
+import hashlib
 import json
 import re
 import socket
@@ -42,9 +45,11 @@ class AMIClient:
     """Tiny blocking AMI client. Use it as a context manager; one short-lived
     connection per sync cycle keeps things simple and robust."""
 
-    def __init__(self, host, port=5038, username='', secret='', timeout=5.0, max_seconds=30.0):
+    def __init__(self, host, port=5038, username='', secret='', timeout=5.0, max_seconds=30.0, auth='md5'):
         self.host, self.port = host, int(port)
         self.username, self.secret = username, secret
+        self.auth = 'plain' if str(auth or '').strip().lower() == 'plain' else 'md5'
+
         self.timeout = float(timeout)
         self.max_seconds = float(max_seconds)
         self._sock = None
@@ -70,7 +75,14 @@ class AMIClient:
         banner = self._read_until(b'\r\n').decode('utf-8', 'replace').strip()
         if not banner.lower().startswith('asterisk call manager'):
             raise AMIError(f'unexpected banner from {self.host}:{self.port}: {banner[:60]!r}')
-        reply = self.action('Login', Username=self.username, Secret=self.secret, Events='off')
+        if self.auth == 'plain':
+            reply = self.action('Login', Username=self.username, Secret=self.secret, Events='off')
+        else:  # MD5 challenge: only md5(challenge + secret) is sent
+            challenge = self.action('Challenge', AuthType='MD5')
+            if challenge.get('Response') != 'Success' or not challenge.get('Challenge'):
+                raise AMIError('AMI MD5 challenge refused: ' + challenge.get('Message', 'no message'))
+            key = hashlib.md5((challenge['Challenge'] + self.secret).encode('utf-8')).hexdigest()
+            reply = self.action('Login', AuthType='MD5', Username=self.username, Key=key, Events='off')
         if reply.get('Response') != 'Success':
             raise AMIError('AMI login failed: ' + reply.get('Message', 'no message'))
 
@@ -125,6 +137,10 @@ class AMIClient:
             self._sock.sendall(('\r\n'.join(lines) + '\r\n\r\n').encode('utf-8'))
         except OSError as exc:
             raise AMIError(f'connection error: {exc}') from exc
+
+    def read_message(self):
+        """Next message from the PBX, for actions whose answer is followed by events (e.g. DBGet)."""
+        return self._read_message()
 
     # ---- actions -----------------------------------------------------------------
     def action(self, name, **fields):
@@ -490,19 +506,52 @@ class IssabelWebScraper:
 
     def fetch_page(self):
         """HTML of the peers page. Logs in on first use and once more if the session has expired."""
+        return self.fetch_path(self.peers_path)
+
+    def fetch_path(self, path):
+        """HTML of any panel page (read-only GET), with the same login / session-expiry handling."""
+        path = path if path.startswith('/') else '/' + path
         for attempt in (1, 2):
             if not self._logged_in:
                 self.login()
-            response = self._request('GET', self.peers_path)
+            response = self._request('GET', path)
             if response.status_code in (401, 403) or (response.status_code < 400 and self._is_login_page(response.text)):
                 self._logged_in = False  # session expired (or was invalidated): sign in again, once
                 if attempt == 1:
                     continue
                 raise PBXWebError('Issabel kept asking for a login right after signing in')
             if response.status_code >= 400:
-                raise PBXWebError(f'Issabel page {self.peers_path} answered HTTP {response.status_code}')
+                raise PBXWebError(f'Issabel page {path} answered HTTP {response.status_code}')
             return response.text
-        raise PBXWebError('could not read the Issabel peers page')  # pragma: no cover
+        raise PBXWebError(f'could not read the Issabel page {path}')  # pragma: no cover
+
+    def open_stream(self, path, headers=None):
+        """Streaming GET of a file from the panel (e.g. a recording). Returns the open requests response;
+        the caller iterates and closes it. An HTML answer (login page or error page) is never returned."""
+        path = path if path.startswith('/') else '/' + path
+        for attempt in (1, 2):
+            if not self._logged_in:
+                self.login()
+            try:
+                response = self.session.get(self.base_url + path, stream=True, timeout=(5, self.timeout),
+                                            verify=self.verify_ssl, headers=headers or {})
+            except requests.RequestException as exc:
+                raise PBXWebError(f'cannot reach the Issabel web panel {self.base_url} ({_short(exc)})') from exc
+            content_type = response.headers.get('Content-Type', '').lower()
+            if response.status_code in (401, 403) or content_type.startswith('text/html'):
+                head = response.raw.read(4096, decode_content=True) if response.status_code < 400 else b''
+                response.close()
+                if response.status_code in (401, 403) or self._is_login_page(head.decode('utf-8', 'replace')):
+                    self._logged_in = False  # session expired: sign in again, once
+                    if attempt == 1:
+                        continue
+                    raise PBXWebError('Issabel kept asking for a login right after signing in')
+                raise PBXWebError('Issabel answered with a web page instead of a file (wrong address, or no permission for the module)')
+            if response.status_code >= 400:
+                response.close()
+                raise PBXWebError(f'Issabel file request answered HTTP {response.status_code}')
+            return response
+        raise PBXWebError('could not open the Issabel file')  # pragma: no cover
 
     # ---- data -------------------------------------------------------------------------
     def _panel_shutdown(self):

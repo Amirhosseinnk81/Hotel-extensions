@@ -11,7 +11,7 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead>
-        <tr><th>{{ t('زمان') }}</th><th>{{ t('کاربر') }}</th><th>{{ t('عملیات') }}</th><th>{{ t('مورد') }}</th><th>{{ t('جزئیات') }}</th></tr>
+        <tr><th>{{ t('زمان') }}</th><th>{{ t('کاربر') }}</th><th>{{ t('عملیات') }}</th><th>{{ t('مورد') }}</th><th>{{ t('جزئیات') }}</th><th>IP</th></tr>
       </thead>
       <tbody>
         {% for log in logs %}
@@ -20,15 +20,16 @@
           <td>{{ log.actor }}</td>
           <td>
             <span class="badge log-action log-action-{{ log.action }}">
-              {{ {'created':t('ایجاد'), 'updated':t('ویرایش'), 'deleted':t('حذف'), 'imported':t('ایمپورت'), 'exported':t('خروجی')}.get(log.action, log.action) }}
+              {{ {'created':t('ایجاد'), 'updated':t('ویرایش'), 'deleted':t('حذف'), 'imported':t('ایمپورت'), 'exported':t('خروجی'), 'compared':t('مقایسه'), 'listened':t('شنیدن'), 'downloaded':t('دانلود'), 'switched':t('تعویض'), 'switch_failed':t('تعویض ناموفق')}.get(log.action, log.action) }}
             </span>
-            <small class="text-muted">{{ {'extension':t('داخلی'), 'department':t('بخش'), 'user':t('کاربر'), 'role':t('نقش'), 'backup':t('بکاپ')}.get(log.entity_type, log.entity_type) }}</small>
+            <small class="text-muted">{{ {'extension':t('داخلی'), 'department':t('بخش'), 'user':t('کاربر'), 'role':t('نقش'), 'backup':t('بکاپ'), 'calls':t('تماس‌ها'), 'pbxsync':t('مقایسه با ایزابل'), 'recording':t('ضبط مکالمه'), 'daynight':t('روز/شب')}.get(log.entity_type, log.entity_type) }}</small>
           </td>
           <td>{{ log.entity_label }}</td>
           <td class="text-muted"><small>{{ log.details or '—' }}</small></td>
+          <td class="text-muted" dir="ltr"><small>{{ log.ip or '—' }}</small></td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-center py-4 text-muted">{{ t('هنوز فعالیتی ثبت نشده است.') }}</td></tr>
+        <tr><td colspan="6" class="text-center py-4 text-muted">{{ t('هنوز فعالیتی ثبت نشده است.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

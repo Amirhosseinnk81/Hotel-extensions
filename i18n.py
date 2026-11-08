@@ -143,6 +143,57 @@ for _k, _v in {
     'حساب کاربری شما غیرفعال شده است و از سامانه خارج شدید.': 'Your account has been deactivated and you have been signed out.',
 }.items():
     EN.setdefault(norm(_k), _v)
+# Call report (CDR): page, feature labels and messages.
+for _k, _v in {
+    'گزارش تماس‌ها': 'Call report',
+    'تماس‌ها': 'Calls',
+    'از گزارش تماس (CDR) ایزابل، فقط خواندنی. چیزی از تماس‌ها در این برنامه ذخیره نمی‌شود.':
+        'From the Issabel call records (CDR), read-only. Nothing about the calls is stored in this app.',
+    'اتصال به CDR ایزابل هنوز تنظیم نشده است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.':
+        'The Issabel CDR connection is not configured yet; see section 11 of DEPLOYMENT.md.',
+    'اتصال به CDR ایزابل تنظیم نشده است.': 'The Issabel CDR connection is not configured.',
+    'خروجی گرفته نشد.': 'The export failed.',
+    'تاریخ شمسی، مثل ۱۴۰۵/۰۸/۱۷. بازه‌ی تاریخ اجباری است و حداکثر': 'Jalali dates, e.g. 1405/08/17. A date range is required, at most',
+    'روز.': 'days.',
+    'جهت': 'Direction',
+    'نمایش': 'Show',
+    'دیروز': 'Yesterday',
+    'تماس ورودی': 'Inbound',
+    'تماس خروجی': 'Outbound',
+    'تماس داخلی': 'Internal',
+    'پاسخ‌داده': 'Answered',
+    'بی‌پاسخ': 'No answer',
+    'اشغال': 'Busy',
+    'ناموفق': 'Failed',
+    'تعداد تماس': 'Calls',
+    'هر تماس یک بار شمرده می‌شود، حتی اگر چند داخلی زنگ خورده باشند.': 'Each call counts once, even if several extensions rang.',
+    'نرخ پاسخگویی': 'Answer rate',
+    'تماس پاسخ‌داده': 'answered calls',
+    'تماس‌های بی‌پاسخ': 'Unanswered calls',
+    'بی‌پاسخ، اشغال یا ناموفق': 'No answer, busy or failed',
+    'پاسخگویی پذیرش': 'Reception answer rate',
+    'تماس ورودی به پذیرش': 'inbound calls to reception',
+    'داخلی‌های پذیرش را در PBX_CDR_RECEPTION تعیین کنید.': 'Set the reception extensions in PBX_CDR_RECEPTION.',
+    'ساعات پیک': 'Peak hours',
+    'بیشترین تماس در ساعت': 'busiest hour',
+    'پرتماس‌ترین داخلی‌ها': 'Busiest extensions',
+    'بار': 'times',
+    'موردی نیست.': 'Nothing to show.',
+    'ردیف CDR': 'CDR rows',
+    'ردیف آخر قابل ورق‌زدن است؛ بازه را کوچک‌تر کنید.': 'newest rows can be paged through; narrow the range.',
+    'از': 'From',
+    'به': 'To',
+    'مدت مکالمه': 'Talk time',
+    'تماسی با این فیلترها پیدا نشد.': 'No calls match these filters.',
+    'تاریخ واردشده معتبر نیست؛ به شکل ۱۴۰۵/۰۸/۱۷ بنویسید.': 'The date is not valid; write it like 1405/08/17.',
+    'شماره‌ی داخلی فقط می‌تواند رقم باشد.': 'An extension number can only contain digits.',
+    'مرکز تلفن': 'Telephony',
+    'مشاهده‌ی گزارش تماس‌ها': 'View call report',
+    'گزارش و آمار تماس‌ها از CDR ایزابل، همراه با شماره‌های تماس': 'Call report and statistics from the Issabel CDR, including phone numbers',
+    'خروجی CSV تماس‌ها': 'Export calls to CSV',
+    'فایل تماس‌ها با شماره‌ها؛ هر خروجی در لاگ فعالیت‌ها ثبت می‌شود': 'Call file with phone numbers; every export is recorded in the activity log',
+}.items():
+    EN.setdefault(norm(_k), _v)
 PATTERNS_RBAC = [
     (r'^نمی‌?توانید دسترسی‌?ای بدهید که خودتان ندارید: (.+)$',
      lambda m, T: 'You cannot give access you do not have yourself: ' + ', '.join(T(x) for x in m.group(1).split('، '))),
@@ -152,6 +203,205 @@ PATTERNS_RBAC = [
 
 # Persian strings that JavaScript (static/app.js) needs; sent to the browser in English mode only.
 JS_KEYS = ["· آخرین همگامسازی با PBX:", "آخرین بررسی:", "اجازهٔ اعلان داده نشد؛ هشدار فقط داخل همین صفحه نشان داده میشود.", "ادامه میدهید؟", "ارتباط با سرور برقرار نیست — نمایش آخرین وضعیت شناختهشده", "از", "اطلاعات بیشتری ثبت نشده است.", "اعلان برای این سایت در مرورگر مسدود است (قفل کنار آدرس ← Notifications ← Allow). فعلاً هشدار فقط داخل همین صفحه نشان داده میشود.", "انتقال به سطل بازیافت", "این داخلی به سطل بازیافت منتقل شود؟ تا قبل از حذف نهایی میتوانید آن را برگردانید.", "این مرورگر اعلان سیستم را پشتیبانی نمیکند؛ هشدار فقط داخل همین صفحه نشان داده میشود.", "بخش", "بروزرسانی زنده", "بستن", "بله، ادامه بده", "بله، منتقل کن", "تأخیر:", "تأیید عملیات", "تلفن آفلاین", "تلفن آنلاین", "تلفن آنلاین (تأخیر بالا)", "توضیحات", "جزئیات", "حاضر", "خارج از شیفت", "خاموش", "در حال ارسال...", "روشن — اعلان ویندوز", "روشن — فقط داخل همین صفحه", "غیرفعال", "فعال", "محل", "مرورگر روی آدرس http (غیر از localhost) اعلان ویندوز نمیدهد. برای اعلان، سایت را با HTTPS یا از روی localhost باز کنید. فعلاً هشدار فقط داخل همین صفحه نشان داده میشود.", "مورد این صفحه", "نام مسئول", "نمایش", "هشدار قطعی تلفنها (", "هشدار قطعی تلفنها خاموش شد.", "هشدار قطعی تلفنها روشن شد.", "وضعیت تلفن نامشخص", "وضعیت داخلی"]
+
+
+# DND / call forward: page, badges (JavaScript), feature label and messages.
+for _k, _v in {
+    'DND و Forward داخلی‌ها': 'Extension DND and forwarding',
+    'DND و Forward': 'DND & forwarding',
+    'مشاهده‌ی DND و Forward داخلی‌ها': 'View extension DND and forwarding',
+    'اتاق‌های «مزاحم نشوید» و داخلی‌های دارای انتقال تماس، همراه با مقصد': 'Rooms on do-not-disturb and extensions that forward calls, with the destination',
+    'فقط نمایش؛ روشن یا خاموش کردن DND و انتقال تماس از همین برنامه ممکن نیست.': 'Display only; DND and call forwarding cannot be switched from this app.',
+    'به‌روزرسانی از ایزابل': 'Refresh from Issabel',
+    'برای این صفحه اتصال AMI به ایزابل لازم است (PBX_AMI_HOST، PBX_AMI_USER، PBX_AMI_SECRET)؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.':
+        'This page needs the AMI connection to Issabel (PBX_AMI_HOST, PBX_AMI_USER, PBX_AMI_SECRET); see section 11 of DEPLOYMENT.md.',
+    'اتصال AMI به ایزابل تنظیم نشده است.': 'The AMI connection to Issabel is not configured.',
+    'آخرین خواندن از ایزابل:': 'Last read from Issabel:',
+    'هنوز از ایزابل خوانده نشده است.': 'Not read from Issabel yet.',
+    'آخرین تلاش ناموفق بود؛ داده‌ی قبلی نمایش داده می‌شود.': 'The last attempt failed; the previous data is shown.',
+    'وضعیت فعلی نامشخص است؛ نبودن در فهرست به معنی خاموش بودن نیست.': 'The current state is unknown; not being listed does not mean switched off.',
+    'طبقه': 'Floor',
+    'مزاحم نشوید (DND)': 'Do not disturb (DND)',
+    'انتقال تماس (Forward)': 'Call forwarding',
+    'انتقال تماس': 'Call forward',
+    'نوع انتقال': 'Forward type',
+    'مقصد': 'Destination',
+    'همیشه': 'Always',
+    'هنگام اشغال': 'When busy',
+    'هنگام عدم پاسخ': 'When unanswered',
+    'آخرین خواندن DND': 'DND last read',
+    'مزاحم نشوید فعال است': 'Do not disturb is on',
+}.items():
+    EN.setdefault(norm(_k), _v)
+# Directory vs. Issabel comparison.
+for _k, _v in {
+    'مقایسه‌ی دفترچه با ایزابل': 'Directory vs. Issabel',
+    'مقایسه با ایزابل': 'Compare with Issabel',
+    'مقایسه': 'Compared',
+    'داخلی‌هایی که فقط در ایزابل یا فقط در دفترچه هستند، و ناهمخوانی نام و نوع': 'Extensions only on Issabel or only in the directory, and name / type differences',
+    'فقط گزارش و پیشنهاد. در ایزابل هیچ چیزی ساخته، تغییر داده یا حذف نمی‌شود؛ افزودن فقط به دفترچه‌ی همین برنامه است.':
+        'Report and suggestions only. Nothing is created, changed or deleted on Issabel; adding only adds to this directory.',
+    'برای این صفحه اتصال MySQL فقط‌خواندنی (با نام داخلی‌ها) یا AMI (فقط شماره‌ها) لازم است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.':
+        'This page needs the read-only MySQL connection (with extension names) or AMI (numbers only); see section 11 of DEPLOYMENT.md.',
+    'اتصال به ایزابل (MySQL یا AMI) تنظیم نشده است.': 'No connection to Issabel (MySQL or AMI) is configured.',
+    'فهرست ایزابل در دسترس نیست؛ اول «به‌روزرسانی از ایزابل» را بزنید.': 'The Issabel list is not available; press “Refresh from Issabel” first.',
+    'هیچ داخلی‌ای انتخاب نشده بود.': 'No extension was selected.',
+    'منبع:': 'Source:',
+    'MySQL (با نام داخلی‌ها)': 'MySQL (with extension names)',
+    'AMI (فقط شماره‌ها، بدون مقایسه‌ی نام)': 'AMI (numbers only, no name comparison)',
+    'ساخت خودکار داخلی‌های تازه خاموش است (PBX_AUTO_CREATE=0)؛ داخلی‌های تازه‌ی ایزابل فقط این‌جا فهرست می‌شوند.':
+        'Automatic creation of new extensions is off (PBX_AUTO_CREATE=0); new Issabel extensions are only listed here.',
+    'در ایزابل هست، در دفترچه نیست': 'On Issabel, not in the directory',
+    'در دفترچه هست، در ایزابل نیست': 'In the directory, not on Issabel',
+    'نام متفاوت': 'Different name',
+    'نوع متفاوت': 'Different type',
+    'داخلی‌های انتخاب‌شده فقط به دفترچه‌ی همین برنامه اضافه شوند؟ در ایزابل چیزی تغییر نمی‌کند.':
+        'Add the selected extensions to this directory only? Nothing changes on Issabel.',
+    'نام در ایزابل': 'Name on Issabel',
+    'درایور': 'Driver',
+    'نوع در دفترچه': 'Type in directory',
+    'افزودن انتخاب‌شده‌ها به دفترچه': 'Add selected to the directory',
+    'در ایزابل هست ولی در سطل بازیافت دفترچه است': 'On Issabel but in the directory recycle bin',
+    'این‌ها را به‌جای افزودن دوباره، از سطل بازیافت برگردانید.': 'Restore these from the recycle bin instead of adding them again.',
+    'عنوان در دفترچه': 'Title in directory',
+    '(پیشنهاد بر اساس الگوی شماره‌ی اتاق؛ ممکن است عمدی باشد)': '(suggested from the room-number pattern; may be intentional)',
+    'پیشنهاد': 'Suggestion',
+    'تعیین نوع داخلی‌های در انتظار در صفحه‌ی PBX': 'Set the type of pending extensions on the PBX page',
+}.items():
+    EN.setdefault(norm(_k), _v)
+# Issabel server health.
+for _k, _v in {
+    'سلامت سرور ایزابل': 'Issabel server health',
+    'سلامت ایزابل': 'Issabel health',
+    'مشاهده‌ی سلامت سرور ایزابل': 'View Issabel server health',
+    'CPU، حافظه، دیسک، سرویس Asterisk، ترانک‌ها و تماس‌های جاری': 'CPU, memory, disk, the Asterisk service, trunks and calls in progress',
+    'هشدار سلامت ایزابل در مرورگر': 'Issabel health alerts in the browser',
+    'دیسک پر، CPU بالا، توقف Asterisk و ترانک رجیسترنشده، در همان زنگوله': 'Full disk, high CPU, stopped Asterisk and unregistered trunks, in the same bell',
+    'فقط خواندنی: CPU، حافظه و دیسک از داشبورد ایزابل؛ زمان روشن‌بودن، تماس‌های جاری و ترانک‌ها از AMI.':
+        'Read-only: CPU, memory and disk from the Issabel dashboard; uptime, calls in progress and trunks from AMI.',
+    'برای این صفحه اتصال AMI یا وب‌پنل ایزابل لازم است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.':
+        'This page needs the AMI or web-panel connection to Issabel; see section 11 of DEPLOYMENT.md.',
+    'اتصال به ایزابل (AMI یا وب‌پنل) تنظیم نشده است.': 'No connection to Issabel (AMI or web panel) is configured.',
+    'داده خیلی قدیمی است؛ وضعیت فعلی نامشخص است.': 'The data is too old; the current state is unknown.',
+    'هشدارهای فعال': 'Active alerts',
+    'هشدار فعال': 'active alert(s)',
+    'در حال اجرا': 'Running',
+    'متوقف': 'Stopped',
+    'روشن از': 'Up since',
+    'تماس‌های جاری': 'Calls in progress',
+    'از AMI': 'from AMI',
+    'حافظه': 'Memory',
+    'از داشبورد ایزابل خوانده نشد': 'Not read from the Issabel dashboard',
+    'دیسک': 'Disk',
+    'هشدار از': 'alert from',
+    'سرویس‌ها': 'Services',
+    'وضعیت سرویس‌ها در داشبورد پیدا نشد.': 'No service states were found on the dashboard.',
+    'ترانک‌ها': 'Trunks',
+    'ترانک': 'Trunk',
+    'وضعیت رجیستر': 'Registration',
+    'رجیستر است': 'Registered',
+    'رجیستر نیست': 'Not registered',
+    'ترانک رجیستری (outbound registration) تعریف نشده است.': 'No trunk with an outbound registration is defined.',
+    'AMI تنظیم نشده است.': 'AMI is not configured.',
+    'هشدار دیسک و CPU با فاصله‌ی برگشت (hysteresis) است: هشدار دیسک از': 'Disk and CPU alerts use hysteresis: the disk alert starts at',
+    'و پایان آن زیر': 'and ends below',
+    'در': 'for',
+    'خواندن پشت‌سرهم و پایان آن زیر': 'readings in a row and ends below',
+    'ترانک‌های رجیسترنشده:': 'Unregistered trunks:',
+    'داده‌ی قدیمی یا ناقص؛ جزئیات در صفحه‌ی سلامت.': 'Old or partial data; details on the health page.',
+    'باز کردن صفحه‌ی سلامت': 'Open the health page',
+}.items():
+    EN.setdefault(norm(_k), _v)
+# Call recordings.
+for _k, _v in {
+    'ضبط مکالمات': 'Call recordings',
+    'ضبط مکالمه': 'Call recording',
+    'ضبط': 'Recording',
+    'شنیدن': 'Listened',
+    'مشاهده‌ی فهرست ضبط مکالمات': 'View the list of call recordings',
+    'فهرست تماس‌های ضبط‌شده در ایزابل (بدون پخش)': 'List of calls Issabel recorded (no playback)',
+    'شنیدن ضبط مکالمات': 'Listen to call recordings',
+    'پخش در مرورگر؛ هر پخش با نام، زمان و IP ثبت می‌شود': 'Play in the browser; every playback is logged with name, time and IP',
+    'دانلود ضبط مکالمات': 'Download call recordings',
+    'دانلود فایل صوتی؛ با سقف تعداد در ساعت و ثبت در لاگ': 'Download the audio file; limited per hour and logged',
+    'همان ضبط‌هایی که ایزابل انجام و نگه‌داری می‌کند. از این صفحه نمی‌شود ضبطی را حذف یا ویرایش کرد و فایلی روی سرور برنامه ذخیره نمی‌شود.':
+        'The recordings Issabel makes and keeps. Recordings cannot be deleted or edited here, and no file is stored on the app server.',
+    'هر پخش و هر دانلود با نام شما، زمان و IP در لاگ فعالیت‌ها ثبت می‌شود.': 'Every playback and download is recorded in the activity log with your name, the time and your IP.',
+    'سقف دانلود برای هر کاربر:': 'Download limit per user:',
+    'فایل در ساعت.': 'files per hour.',
+    'برای پخش و دانلود، اتصال وب‌پنل ایزابل (PBX_WEB_* یا PBX_REC_WEB_*) لازم است.': 'Playback and download need the Issabel web-panel connection (PBX_WEB_* or PBX_REC_WEB_*).',
+    'شماره‌ی تماس': 'Phone number',
+    'تماس ضبط‌شده': 'recorded calls',
+    'نام فایل ضبط معتبر نیست': 'The recording file name is not valid',
+    'اجازه‌ی پخش ندارید': 'You may not play recordings',
+    'ضبطی با این فیلترها پیدا نشد.': 'No recordings match these filters.',
+    'شماره‌ی تماس فقط می‌تواند رقم باشد (۳ تا ۲۰ رقم).': 'A phone number can only contain digits (3 to 20).',
+    'سقف دانلود ضبط‌ها در این ساعت پر شده است؛ کمی بعد دوباره امتحان کنید.': 'The hourly download limit for recordings is reached; try again later.',
+    'اتصال وب‌پنل ایزابل برای ضبط‌ها تنظیم نشده است.': 'The Issabel web-panel connection for recordings is not configured.',
+    'ایزابل فایل صوتی برنگرداند.': 'Issabel did not return an audio file.',
+}.items():
+    EN.setdefault(norm(_k), _v)
+# Day / night mode.
+for _k, _v in {
+    'حالت روز/شب': 'Day / night mode',
+    'روز/شب': 'Day / night',
+    'روز': 'Day',
+    'شب': 'Night',
+    'مشاهده‌ی حالت روز/شب': 'View day / night mode',
+    'وضعیت فعلی هر Call Flow و مقصد تماس‌ها در حالت روز و شب': 'Current state of each Call Flow and where calls go by day and by night',
+    'تعویض حالت روز/شب': 'Switch day / night mode',
+    'مسیر تماس‌های ورودی را عوض می‌کند؛ فقط موارد مجاز، با تأیید و ثبت در لاگ': 'Changes where incoming calls go; allowed items only, with confirmation and logging',
+    'وضعیت Call Flow Controlهای ایزابل. تعویض، مسیر تماس‌های ورودی را همان لحظه عوض می‌کند.':
+        'State of the Issabel Call Flow Controls. Switching changes where incoming calls go, immediately.',
+    'تعویض از این برنامه خاموش است (PBX_DAYNIGHT_WRITE_ENABLED=0)؛ فقط نمایش.': 'Switching from this app is off (PBX_DAYNIGHT_WRITE_ENABLED=0); display only.',
+    'کاربر نوشتن AMI (PBX_AMI_WRITE_USER) تنظیم نشده است.': 'The AMI write user (PBX_AMI_WRITE_USER) is not configured.',
+    'نام و مقصد Call Flowها خوانده نشد:': 'Call Flow names and destinations could not be read:',
+    'حالت فعلی': 'Current mode',
+    'مقصد در حالت روز': 'Destination by day',
+    'مقصد در حالت شب': 'Destination by night',
+    'آخرین تغییر': 'Last change',
+    'پیش‌فرض': 'default',
+    'تعویض به روز': 'Switch to day',
+    'تعویض به شب': 'Switch to night',
+    'خارج از فهرست مجاز': 'Not in the allowed list',
+    'هیچ Call Flow Control‌ای پیدا نشد.': 'No Call Flow Control was found.',
+    'شرط‌های زمانی (Time Conditions)': 'Time conditions',
+    'نام': 'Name',
+    'حالت': 'Mode',
+    'دستی:': 'Manual:',
+    'خودکار (بر اساس ساعت)': 'Automatic (by time)',
+    'شرط‌های زمانی فقط نمایش داده می‌شوند؛ حالت «خودکار» یعنی ایزابل در لحظه‌ی هر تماس بر اساس ساعت تصمیم می‌گیرد.':
+        'Time conditions are display only; “automatic” means Issabel decides by the clock when each call arrives.',
+    '← بازگشت به حالت روز/شب': '← Back to day / night mode',
+    'مطمئنی؟': 'Are you sure?',
+    'از حالت': 'goes from',
+    'به حالت': 'to',
+    'می‌رود.': '.',
+    'تماس‌های ورودی از': 'Incoming calls move from',
+    'مقصد فعلی': 'the current destination',
+    'مقصد حالت دیگر': 'the other destination',
+    'می‌روند.': '.',
+    'قبل از نوشتن، وضعیت دوباره از ایزابل خوانده می‌شود؛ اگر کسی در این فاصله آن را عوض کرده باشد، کاری انجام نمی‌شود.':
+        'Before writing, the state is read from Issabel again; if someone changed it meanwhile, nothing is done.',
+    'بعد از نوشتن، وضعیت دوباره خوانده و تأیید می‌شود. تلاش دوباره‌ی خودکار در کار نیست.': 'After writing, the state is read back and confirmed. There is no automatic retry.',
+    'چراغ BLF تلفن‌ها هم به‌روز می‌شود.': 'The BLF lamps of the phones are updated too.',
+    'این تغییر با نام شما، زمان و IP در لاگ فعالیت‌ها ثبت می‌شود.': 'This change is recorded in the activity log with your name, the time and your IP.',
+    'بله، به حالت': 'Yes, switch to',
+    'برود': '',
+    'وضعیت نمایش‌داده‌شده از خواندن': 'The state shown is from the read at',
+    'است.': '.',
+    'تعویض': 'Switched',
+    'تعویض ناموفق': 'Switch failed',
+    'تعویض روز/شب در تنظیمات خاموش است (PBX_DAYNIGHT_WRITE_ENABLED).': 'Day / night switching is off in the settings (PBX_DAYNIGHT_WRITE_ENABLED).',
+    'این مورد در فهرست مجاز تعویض (PBX_DAYNIGHT_ALLOWED) نیست.': 'This item is not in the allowed list (PBX_DAYNIGHT_ALLOWED).',
+    'وضعیت فعلی این مورد معلوم نیست؛ اول «به‌روزرسانی از ایزابل» را بزنید.': 'The current state of this item is unknown; press “Refresh from Issabel” first.',
+    'یک تعویض دیگر همین الان در حال انجام است؛ چند ثانیه بعد صفحه را دوباره ببینید.': 'Another switch is running right now; look at the page again in a few seconds.',
+    'وضعیت عوض شد ولی چراغ BLF تلفن‌ها به‌روز نشد.': 'The mode changed, but the BLF lamps of the phones were not updated.',
+    'درخواست تعویض معتبر نیست.': 'The switch request is not valid.',
+}.items():
+    EN.setdefault(norm(_k), _v)
+JS_KEYS += [norm(k) for k in ('مزاحم نشوید فعال است', 'انتقال تماس', 'همیشه', 'هنگام اشغال', 'هنگام عدم پاسخ', 'نامشخص', 'فعال', 'غیرفعال', 'ندارد')
+            if norm(k) not in JS_KEYS]
 
 
 def js_dictionary():
@@ -227,8 +477,8 @@ def translate(text, lang):
     return out
 
 
-def jalali_year(gy, gm, gd):
-    """Gregorian -> Jalali year (for the footer)."""
+def gregorian_to_jalali(gy, gm, gd):
+    """Gregorian (y, m, d) -> Jalali (y, m, d). Arithmetic version of the usual jdf conversion."""
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     gy2 = gy + 1 if gm > 2 else gy
     days = 355666 + 365 * gy + (gy2 + 3) // 4 - (gy2 + 99) // 100 + (gy2 + 399) // 400 + gd + g_d_m[gm - 1]
@@ -238,4 +488,48 @@ def jalali_year(gy, gm, gd):
     days %= 1461
     if days > 365:
         jy += (days - 1) // 365
-    return jy
+        days = (days - 1) % 365
+    if days < 186:
+        return jy, 1 + days // 31, 1 + days % 31
+    return jy, 7 + (days - 186) // 30, 1 + (days - 186) % 30
+
+
+def jalali_to_gregorian(jy, jm, jd):
+    """Jalali (y, m, d) -> Gregorian (y, m, d). No validation: see jalali_is_valid()."""
+    jy += 1595
+    days = -355668 + 365 * jy + (jy // 33) * 8 + ((jy % 33) + 3) // 4 + jd + ((jm - 1) * 31 if jm < 7 else (jm - 7) * 30 + 186)
+    gy = 400 * (days // 146097)
+    days %= 146097
+    if days > 36524:
+        days -= 1
+        gy += 100 * (days // 36524)
+        days %= 36524
+        if days >= 365:
+            days += 1
+    gy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        gy += (days - 1) // 365
+        days = (days - 1) % 365
+    gd = days + 1
+    leap = (gy % 4 == 0 and gy % 100 != 0) or gy % 400 == 0
+    month_days = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    gm = 1
+    for length in month_days:
+        if gd <= length:
+            break
+        gd -= length
+        gm += 1
+    return gy, gm, gd
+
+
+def jalali_is_valid(jy, jm, jd):
+    """True for a real Jalali date (Esfand 30 only in leap years)."""
+    if not (1 <= jm <= 12 and 1 <= jd <= 31) or (jm > 6 and jd > 30):
+        return False
+    return gregorian_to_jalali(*jalali_to_gregorian(jy, jm, jd)) == (jy, jm, jd)
+
+
+def jalali_year(gy, gm, gd):
+    """Gregorian -> Jalali year (for the footer)."""
+    return gregorian_to_jalali(gy, gm, gd)[0]

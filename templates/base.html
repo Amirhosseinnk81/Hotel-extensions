@@ -24,7 +24,7 @@
 <link href="{{ vendor_asset('bootstrap.rtl.min.css' if lang == 'fa' else 'bootstrap.min.css') }}" rel="stylesheet">
 <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
-<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% if can('outages.alerts') and pbx_config().enabled and pbx_config().alerts_enabled %} data-alerts-url="{{ url_for('api_outage_alerts') }}" data-outages-url="{{ url_for('outages_report') }}"{% endif %}>
+<body data-version="{{ data_version() }}" data-version-url="{{ url_for('api_version') }}"{% if pbx_config().enabled %} data-status-url="{{ url_for('api_extensions_status') }}" data-status-interval="{{ pbx_config().interval }}"{% endif %}{% set feeds = alert_feeds() %}{% if feeds %} data-alerts-url="{{ feeds | join(' ') }}"{% endif %}>
 <a class="skip-link no-print" href="#main">{{ t('پرش به محتوای اصلی') }}</a>
 <div id="updateToast" class="update-toast no-print" role="status" hidden>
   <span>{{ t('یک به‌روزرسانی جدید موجود است.') }}</span>
@@ -39,7 +39,7 @@
 {% endmacro %}
 
 {% macro alert_bell() %}
-  {% if can('outages.alerts') and pbx_config().enabled and pbx_config().alerts_enabled %}
+  {% if alert_feeds() %}
   <button type="button" id="alertToggle" class="alert-bell" aria-pressed="false" title="{{ t('هشدار قطعی تلفن‌ها (خاموش)') }}" aria-label="{{ t('هشدار قطعی تلفن‌ها') }}"><span aria-hidden="true">{{ ico('bell') }}</span></button>
   {% endif %}
 {% endmacro %}

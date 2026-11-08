@@ -660,7 +660,46 @@
         row.dataset.phoneState = paint(pill, info, data);
         row.dataset.phonestatus = tr(info.label || '');
       });
+      applyFlags(data.flags);
       if (directory.apply) directory.apply();
+    }
+
+    // DND / call-forward badges (only sent to users allowed to see them; from the server's cached snapshot)
+    function flagBadges(state) {
+      var out = [];
+      if (!state || !state.known) return out;
+      if (state.dnd) out.push(['dnd', 'DND', tr('مزاحم نشوید فعال است')]);
+      (state.forwards || []).forEach(function (f) { out.push(['fwd', '↪ ' + f.to, tr('انتقال تماس') + ' (' + tr(f.label) + ')']); });
+      return out;
+    }
+
+    function applyFlags(flags) {
+      if (!flags) return;
+      var scanned = {};
+      (flags.scanned || []).forEach(function (ext) { scanned[ext] = true; });
+      var stamp = fmtTime(flags.updated_at);
+      $$('.extension-card, .ext-tile, tr[data-ext]').forEach(function (node) {
+        var ext = node.dataset.ext;
+        var known = flags.state !== 'unknown' && scanned[ext];
+        var state = known ? ((flags.items || {})[ext] || { known: true, dnd: false, forwards: [] }) : null;
+        // unknown is never shown as "off"
+        node.dataset.dnd = !known ? tr('نامشخص') : (state.dnd ? tr('فعال') : tr('غیرفعال'));
+        node.dataset.forward = !known ? tr('نامشخص') : (state.forwards.length
+          ? state.forwards.map(function (f) { return tr(f.label) + ': ' + f.to; }).join('، ') : tr('ندارد'));
+        node.dataset.dndcheck = stamp || '';
+        var slot = node.classList.contains('extension-card') ? $('.card-status-col', node)
+          : node.classList.contains('ext-tile') ? node : $('[data-phone-cell]', node);
+        if (!slot) return;
+        $$('[data-flag-badge]', slot).forEach(function (badge) { badge.parentNode.removeChild(badge); });
+        flagBadges(state).forEach(function (b) {
+          var el = document.createElement('span');
+          el.setAttribute('data-flag-badge', '');
+          el.className = 'flag-badge flag-' + b[0];
+          el.textContent = b[1];
+          el.title = b[2];
+          slot.appendChild(el);
+        });
+      });
     }
 
     function poll(manual) {
@@ -697,7 +736,8 @@
   function initDetailModal() {
     var dialog = $('#extensionDetailModal');   // a native <dialog>: hidden by the browser until opened, no Bootstrap needed
     if (!dialog) return;
-    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus', 'phonecheck'];
+    var fields = ['extension', 'title', 'person', 'department', 'location', 'email', 'mobile', 'hours', 'notes', 'created', 'updated', 'phonestatus', 'phonecheck',
+                  'dnd', 'forward', 'dndcheck'];
 
     function open() {
       if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
@@ -1050,12 +1090,13 @@
   /* ---------------- Outage alerts: Windows notifications through the browser ---------------- */
   // The server decides what is worth an alert (summaries included); this only shows them.
   // Browsers allow system notifications on HTTPS pages and on localhost only; elsewhere the alert is an in-page toast.
+  // data-alerts-url may hold several feeds (phone outages, Issabel health), each with its own "last seen" id.
   function initOutageAlerts() {
-    var url = document.body.dataset.alertsUrl;
+    var urls = (document.body.dataset.alertsUrl || '').split(/\s+/).filter(Boolean);
     var btn = $('#alertToggle');
-    if (!url || !btn) return;
+    if (!urls.length || !btn) return;
     var KEY = 'hp_alerts';
-    var LAST = 'hp_alerts_last';
+    var LAST = 'hp_alerts_last';   // the phone feed keeps its old key; other feeds add their path
     var hasApi = 'Notification' in window;
     var secure = !!window.isSecureContext;
     var timer = null;
@@ -1064,12 +1105,13 @@
     function systemReady() { return hasApi && secure && Notification.permission === 'granted'; }
     function isOn() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
     function setOn(on) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {} }
-    function getLast() {
+    function lastKey(url) { return url.indexOf('/api/outages/') !== -1 ? LAST : LAST + ':' + url; }
+    function getLast(url) {
       var n = NaN;
-      try { n = parseInt(localStorage.getItem(LAST), 10); } catch (e) {}
+      try { n = parseInt(localStorage.getItem(lastKey(url)), 10); } catch (e) {}
       return isNaN(n) ? null : n;
     }
-    function setLast(n) { try { localStorage.setItem(LAST, String(n)); } catch (e) {} }
+    function setLast(url, n) { try { localStorage.setItem(lastKey(url), String(n)); } catch (e) {} }
 
     function paint() {
       var on = isOn();
@@ -1094,22 +1136,27 @@
       toast(alert.title + (alert.body ? ' — ' + alert.body : ''), alert.quiet ? 'success' : 'danger', { duration: alert.quiet ? 6000 : 12000 });
     }
 
-    function poll() {
-      if (!isOn() || busy) return;
-      busy = true;
-      var after = getLast();
-      fetch(url + (after === null ? '' : '?after=' + after), { credentials: 'same-origin', cache: 'no-store' })
+    function pollOne(url) {
+      var after = getLast(url);
+      return fetch(url + (after === null ? '' : '?after=' + after), { credentials: 'same-origin', cache: 'no-store' })
         .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(function (data) {
           if (!data || data.ok === false) return;
-          var seen = getLast();   // another tab may have shown some of these already
+          var seen = getLast(url);   // another tab may have shown some of these already
           (data.alerts || []).forEach(function (alert) {
             if (seen === null || alert.id > seen) show(alert);
           });
-          if (typeof data.latest_id === 'number') setLast(data.latest_id);
+          if (typeof data.latest_id === 'number') setLast(url, data.latest_id);
         })
-        .catch(function () { /* the next round tries again */ })
-        .then(function () { busy = false; });
+        .catch(function () { /* the next round tries again */ });
+    }
+
+    function poll() {
+      if (!isOn() || busy) return;
+      busy = true;
+      var chain = Promise.resolve();
+      urls.forEach(function (url) { chain = chain.then(function () { return pollOne(url); }); });
+      chain.then(function () { busy = false; });
     }
 
     function start() {
@@ -1120,7 +1167,7 @@
 
     function turnOn() {
       var finish = function () {
-        try { localStorage.removeItem(LAST); } catch (e) {}   // start from "now": no alerts for what happened while it was off
+        urls.forEach(function (url) { try { localStorage.removeItem(lastKey(url)); } catch (e) {} });   // start from "now": no alerts for what happened while it was off
         setOn(true);
         paint();
         start();

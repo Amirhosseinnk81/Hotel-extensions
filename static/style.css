@@ -546,6 +546,39 @@ details.form-collapsible[open] > summary{padding-bottom:.9rem;border-bottom:1px 
 .log-action-imported{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
 .log-action-exported{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-line)}
 
+/* ---------- DND / forward badges ---------- */
+.flag-badge{display:inline-block;margin-inline-start:.3rem;padding:.05rem .45rem;border-radius:999px;font-size:.7rem;font-weight:700;line-height:1.5;border:1px solid var(--line);white-space:nowrap;direction:ltr}
+.flag-dnd{background:var(--bad-soft);color:var(--bad-ink);border-color:var(--bad-line)}
+.flag-fwd{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+.ext-tile .flag-badge{position:relative;z-index:1}
+
+/* ---------- Issabel health ---------- */
+.health-bar{display:block;height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:.35rem}
+.health-bar>span{display:block;height:100%;max-width:100%;background:var(--accent)}
+.is-hot .health-bar>span,.table-danger .health-bar>span{background:var(--bad)}
+
+/* ---------- Call recordings ---------- */
+.recording-cell{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.recording-cell audio{height:34px;max-width:260px}
+.log-action-listened,.log-action-downloaded{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+
+/* ---------- Day / night ---------- */
+.daynight-state{display:inline-block;padding:.15rem .6rem;border-radius:999px;font-weight:700;border:1px solid var(--line)}
+.daynight-day{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+.daynight-night{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-line)}
+.daynight-confirm{max-width:720px;border-color:var(--bad-line)}
+.log-action-switched{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+.log-action-switch_failed{background:var(--bad-soft);color:var(--bad-ink);border-color:var(--bad-line)}
+
+/* ---------- Call report ---------- */
+.call-hours{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;align-items:end;height:140px}
+.call-hour{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.call-hour-bar{display:block;width:100%;min-height:2px;border-radius:4px 4px 0 0;background:var(--accent)}
+.call-hour small{font-size:.62rem;color:var(--muted)}
+.call-status{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.78rem;border:1px solid var(--line)}
+.call-answered{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}
+.call-missed,.call-busy,.call-failed{background:var(--bad-soft);color:var(--bad-ink);border-color:var(--bad-line)}
+
 /* ---------- Outage report ---------- */
 .outage-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
 .outage-stat{display:flex;flex-direction:column;gap:.15rem;padding:1rem 1.2rem}

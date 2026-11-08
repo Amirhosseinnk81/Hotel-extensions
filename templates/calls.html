@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'calls' %}
+{% block title %}Call Report{% endblock %}
+{% block content %}
+{% set base_args = filters.as_args() %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4">
+  <h1 class="h2 mb-1">{{ t('گزارش تماس‌ها') }}</h1>
+  <p class="text-muted mb-0">{{ t('از گزارش تماس (CDR) ایزابل، فقط خواندنی. چیزی از تماس‌ها در این برنامه ذخیره نمی‌شود.') }}</p>
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('اتصال به CDR ایزابل هنوز تنظیم نشده است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% for w in warnings %}<div class="alert alert-warning py-2">{{ w }}</div>{% endfor %}
+
+<form class="search-card outage-filters mb-3 no-print" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="c-from">{{ t('از تاریخ') }}</label>
+      <input id="c-from" name="from" value="{{ (jalali_text(filters.day_from))|e }}" class="form-control" dir="ltr" inputmode="numeric" placeholder="1405/08/17" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="c-to">{{ t('تا تاریخ') }}</label>
+      <input id="c-to" name="to" value="{{ (jalali_text(filters.day_to))|e }}" class="form-control" dir="ltr" inputmode="numeric" placeholder="1405/08/17" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="c-ext">{{ t('داخلی') }}</label>
+      <input id="c-ext" name="extension" value="{{ (filters.extension)|e }}" class="form-control" dir="ltr" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="c-dir">{{ t('جهت') }}</label>
+      <select id="c-dir" name="direction" class="form-select">
+        <option value="">{{ t('همه') }}</option>
+        {% for key, label in direction_labels.items() %}<option value="{{ key }}" {% if filters.direction == key %}selected{% endif %}>{{ t(label) }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-lg-2">
+      <label class="form-label" for="c-status">{{ t('وضعیت') }}</label>
+      <select id="c-status" name="status" class="form-select">
+        <option value="">{{ t('همه') }}</option>
+        {% for key, label in status_labels.items() %}<option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ t(label) }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-lg-2 d-grid"><button class="btn btn-primary">{{ t('نمایش') }}</button></div>
+  </div>
+  <div class="outage-chips mt-2">
+    {% for key, label in (('today', 'امروز'), ('yesterday', 'دیروز'), ('7d', '۷ روز'), ('30d', '۳۰ روز')) %}
+      <a class="range-chip" href="{{ url_for('calls_report', range=key) }}">{{ t(label) }}</a>
+    {% endfor %}
+    <small class="text-muted">{{ t('تاریخ شمسی، مثل ۱۴۰۵/۰۸/۱۷. بازه‌ی تاریخ اجباری است و حداکثر') }} {{ rules.max_days }} {{ t('روز.') }}</small>
+  </div>
+</form>
+
+{% if summary %}
+<div class="outage-stats mb-3">
+  <div class="outage-stat">
+    <span class="outage-stat-label">{{ t('تعداد تماس') }}</span>
+    <strong class="outage-stat-value">{{ summary.calls }}</strong>
+    <small>{{ t('هر تماس یک بار شمرده می‌شود، حتی اگر چند داخلی زنگ خورده باشند.') }}</small>
+  </div>
+  <div class="outage-stat">
+    <span class="outage-stat-label">{{ t('نرخ پاسخگویی') }}</span>
+    <strong class="outage-stat-value"><bdi dir="ltr">{{ '%s%%' % summary.answer_rate if summary.answer_rate is not none else '—' }}</bdi></strong>
+    <small>{{ summary.answered }} {{ t('تماس پاسخ‌داده') }}</small>
+  </div>
+  <div class="outage-stat {{ 'is-hot' if summary.unanswered }}">
+    <span class="outage-stat-label">{{ t('تماس‌های بی‌پاسخ') }}</span>
+    <strong class="outage-stat-value">{{ summary.unanswered }}</strong>
+    <small>{{ t('بی‌پاسخ، اشغال یا ناموفق') }}</small>
+  </div>
+  <div class="outage-stat">
+    <span class="outage-stat-label">{{ t('پاسخگویی پذیرش') }}</span>
+    {% if summary.reception %}
+      <strong class="outage-stat-value"><bdi dir="ltr">{{ '%s%%' % summary.reception.rate if summary.reception.rate is not none else '—' }}</bdi></strong>
+      <small>{{ summary.reception.answered }} / {{ summary.reception.calls }} {{ t('تماس ورودی به پذیرش') }}</small>
+    {% else %}
+      <strong class="outage-stat-value">—</strong>
+      <small>{{ t('داخلی‌های پذیرش را در PBX_CDR_RECEPTION تعیین کنید.') }}</small>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <div class="panel p-3 h-100">
+      <h2 class="h6 mb-2">{{ t('ساعات پیک') }}
+        {% if summary.peak_hours %}<small class="text-muted">— {{ t('بیشترین تماس در ساعت') }} <bdi dir="ltr">{{ summary.peak_hours | join(', ') }}</bdi></small>{% endif %}
+      </h2>
+      <div class="call-hours" dir="ltr">
+        {% for h in summary.hours %}
+          <div class="call-hour" title="{{ h.hour }}:00 — {{ h.calls }}">
+            <span class="call-hour-bar" style="height: {{ h.width }}%"></span>
+            <small>{{ h.hour }}</small>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="panel p-3 h-100">
+      <h2 class="h6 mb-2">{{ t('پرتماس‌ترین داخلی‌ها') }}</h2>
+      <ol class="outage-worst">
+        {% for item in summary.top %}
+          <li><a href="{{ url_for('calls_report', **dict(base_args, extension=item.extension)) }}" dir="ltr">{{ item.extension }}</a> <small>{{ item.calls }} {{ t('بار') }}</small></li>
+        {% else %}
+          <li class="text-muted">{{ t('موردی نیست.') }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="results-bar mb-3">
+  <div aria-live="polite">
+    <h5 class="mb-0">{{ total }} {{ t('ردیف CDR') }}</h5>
+    {% if total > rules.max_rows %}
+      <span class="results-page-info">{{ t('فقط') }} {{ rules.max_rows }} {{ t('ردیف آخر قابل ورق‌زدن است؛ بازه را کوچک‌تر کنید.') }}</span>
+    {% endif %}
+  </div>
+  {% if can('calls.export') and configured %}
+    <a class="btn btn-secondary btn-sm no-print" href="{{ url_for('calls_export', **base_args) }}">⬇ {{ t('خروجی CSV') }}</a>
+  {% endif %}
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle compact-table call-table">
+    <thead>
+      <tr><th>{{ t('زمان') }}</th><th>{{ t('از') }}</th><th>{{ t('به') }}</th><th>{{ t('جهت') }}</th><th>{{ t('وضعیت') }}</th><th>{{ t('مدت مکالمه') }}</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="nowrap"><bdi dir="ltr">{{ r.time }}</bdi></td>
+          <td dir="ltr" class="text-start">{{ r.src or '—' }}</td>
+          <td dir="ltr" class="text-start">{{ r.dst or '—' }}</td>
+          <td>{{ t(direction_labels[r.direction]) }}</td>
+          <td><span class="call-status call-{{ r.status or 'other' }}">{{ t(status_labels[r.status]) if r.status else r.disposition }}</span></td>
+          <td class="nowrap"><bdi dir="ltr">{{ format_seconds(r.billsec) }}</bdi></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-center py-4 text-muted">{{ t('تماسی با این فیلترها پیدا نشد.') if configured and not error else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+  <nav class="pagination-bar mt-3 no-print" aria-label="{{ t('صفحه‌بندی') }}">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {{ 'disabled' if page <= 1 }}"><a class="page-link" href="{{ url_for('calls_report', **dict(base_args, page=page-1)) }}">{{ t('قبلی') }}</a></li>
+      {% for p in range(1, pages + 1) %}
+        {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+          <li class="page-item {{ 'active' if p == page }}"><a class="page-link" href="{{ url_for('calls_report', **dict(base_args, page=p)) }}">{{ p }}</a></li>
+        {% elif p == page - 2 or p == page + 2 %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if page >= pages }}"><a class="page-link" href="{{ url_for('calls_report', **dict(base_args, page=page+1)) }}">{{ t('بعدی') }}</a></li>
+    </ul>
+  </nav>
+{% endif %}
+{% endblock %}

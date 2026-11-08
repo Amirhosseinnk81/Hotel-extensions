@@ -51,6 +51,32 @@ def _summary(kind, items, url):
             'quiet': quiet, 'title': title, 'body': body, 'url': url}
 
 
+RAISED = 'raised'
+_HEALTH_TEXT = {  # (subject kind, raised?) -> (title, body); {s} = subject, {d} = detail
+    ('disk', True): ('💽 دیسک ایزابل در حال پر شدن است', '{s}: {d}'),
+    ('disk', False): ('✅ فضای دیسک ایزابل عادی شد', '{s}: {d}'),
+    ('cpu', True): ('⚙ بار پردازنده‌ی ایزابل بالاست', 'CPU: {d}'),
+    ('cpu', False): ('✅ بار پردازنده‌ی ایزابل عادی شد', 'CPU: {d}'),
+    ('asterisk', True): ('⛔ سرویس Asterisk روی ایزابل متوقف است', ''),
+    ('asterisk', False): ('✅ سرویس Asterisk دوباره اجرا شد', ''),
+    ('trunk', True): ('📞 ترانک {s} رجیستر نیست', '{d}'),
+    ('trunk', False): ('✅ ترانک {s} دوباره رجیستر شد', ''),
+}
+
+
+def plan_health_alerts(events, url=''):
+    """Issabel health events (kind raised / cleared, extension = disk / cpu / asterisk / trunk) -> alerts.
+    Problems ring; recoveries are quiet. There are few of these, so no summary is needed."""
+    alerts = []
+    for event in events:
+        raised = event['kind'] == RAISED
+        title, body = _HEALTH_TEXT.get((event['extension'], raised), ('⚠ ' + str(event.get('title') or ''), ''))
+        values = {'s': event.get('title') or '', 'd': event.get('detail') or ''}
+        alerts.append({'id': event['id'], 'kind': f"pbx-{event['kind']}", 'tag': f"pbx-{event['kind']}-{event['id']}", 'quiet': not raised,
+                       'title': title.format(**values), 'body': body.format(**values).strip(': ').strip(), 'url': url})
+    return alerts
+
+
 def plan_alerts(events, threshold=5, on_recovery=True, url=''):
     """Events (oldest first) -> alerts to show, ordered by id. A group of the same kind from the same
     sync cycle with more than `threshold` members becomes one summary alert."""

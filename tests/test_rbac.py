@@ -77,6 +77,8 @@ class RegistryTests(unittest.TestCase):
         'extensions.import', 'extensions.mac_import', 'extensions.export', 'departments.manage',
         'pbx.view', 'pbx.sync', 'pbx.review', 'outages.view', 'outages.export', 'outages.alerts',
         'trash.view', 'trash.restore', 'trash.purge', 'backup.download', 'users.manage', 'roles.manage', 'activity_log.view',
+        'calls.view', 'calls.export', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts',
+        'recordings.view', 'recordings.listen', 'recordings.download', 'daynight.view', 'daynight.toggle',
     }
 
     def test_all_current_features_registered(self):
@@ -85,7 +87,7 @@ class RegistryTests(unittest.TestCase):
     def test_dangerous_flags(self):
         dangerous = {k for k, f in features.FEATURES.items() if f.dangerous}
         self.assertEqual(dangerous, {'extensions.delete_all', 'extensions.import', 'extensions.mac_import', 'trash.purge',
-                                     'backup.download', 'users.manage', 'roles.manage'})
+                                     'backup.download', 'users.manage', 'roles.manage', 'recordings.listen', 'recordings.download', 'daynight.toggle'})
 
     def test_duplicate_key_rejected(self):
         with self.assertRaisesRegex(ValueError, 'registered twice'):
@@ -121,7 +123,8 @@ class RegistryTests(unittest.TestCase):
         menu = [(group, [item.endpoint for _f, item in entries]) for group, entries in features.menu()]
         self.assertEqual(menu, [
             ('دفترچه', ['admin', 'mac_import']),
-            ('پایش', ['pbx_status', 'outages_report']),
+            ('پایش', ['pbx_status', 'pbx_health_page', 'outages_report', 'dnd_report', 'pbx_directory']),
+            ('مرکز تلفن', ['calls_report', 'recordings_list', 'daynight_page']),
             ('سیستم', ['trash', 'admin_users', 'admin_roles', 'activity_log']),
         ])
 

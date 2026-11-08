@@ -16,6 +16,14 @@ sys.path.insert(0, ROOT)
 import envfile  # noqa: E402
 
 SECRET_WORDS = ('PASS', 'SECRET', 'KEY', 'TOKEN')
+# A connection only works when all of its variables are set; half a group is almost always a typo.
+GROUPS = (
+    ('AMI', ('PBX_AMI_HOST', 'PBX_AMI_USER', 'PBX_AMI_SECRET')),
+    ('web panel', ('PBX_WEB_HOST', 'PBX_WEB_USER', 'PBX_WEB_PASS')),
+    ('CDR database', ('PBX_CDR_HOST', 'PBX_CDR_USER', 'PBX_CDR_PASS')),
+    ('AMI write user (day / night)', ('PBX_AMI_WRITE_USER', 'PBX_AMI_WRITE_SECRET')),
+)
+CHOICES = {'PBX_DAYNIGHT_WRITE_METHOD': ('setvar', 'dbput'), 'PBX_AMI_AUTH': ('md5', 'plain'), 'PBX_SIP_DRIVER': ('auto', 'sip', 'pjsip'), 'PBX_SOURCE': ('auto', 'ami', 'web')}
 
 
 def known_names():
@@ -24,6 +32,21 @@ def known_names():
             return set(re.findall(r'^\s*#?\s*([A-Z][A-Z0-9_]*)=', handle.read(), re.M))
     except OSError:
         return set()
+
+
+def group_problems(values):
+    """values: {name: value} (the .env file over the system) -> ['CDR database: PBX_CDR_PASS is missing', ...]"""
+    problems = []
+    for label, names in GROUPS:
+        present = [n for n in names if (values.get(n) or '').strip()]
+        if present and len(present) < len(names):
+            missing = ', '.join(n for n in names if n not in present)
+            problems.append(f'{label}: {missing} missing, so this connection stays off')
+    for name, allowed in CHOICES.items():
+        value = (values.get(name) or '').strip().lower()
+        if value and value not in allowed:
+            problems.append(f'{name}={value!r} is not one of {", ".join(allowed)}; the default is used')
+    return problems
 
 
 def main():
@@ -53,6 +76,10 @@ def main():
         print(f'  line {number}: {problem} (ignored)')
     if not pairs and not problems:
         print('  (the file has no settings; every line is blank or a comment)')
+    effective = dict(pairs)
+    effective.update({name: value for name, value in os.environ.items() if name.startswith('PBX_')})  # the system wins
+    for problem in group_problems(effective):
+        print(f'  check: {problem}')
 
 
 if __name__ == '__main__':

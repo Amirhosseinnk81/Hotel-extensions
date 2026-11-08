@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'daynight' %}
+{% block title %}Day and Night Mode{% endblock %}
+{% block content %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h1 class="h2 mb-1">{{ t('حالت روز/شب') }}</h1>
+    <p class="text-muted mb-0">{{ t('وضعیت Call Flow Controlهای ایزابل. تعویض، مسیر تماس‌های ورودی را همان لحظه عوض می‌کند.') }}</p>
+  </div>
+  {% if configured %}
+  <form method="post" action="{{ url_for('daynight_refresh') }}" class="no-print">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <button class="btn btn-outline-secondary btn-sm">{{ t('به‌روزرسانی از ایزابل') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI به ایزابل لازم است (PBX_AMI_HOST، PBX_AMI_USER، PBX_AMI_SECRET)؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% else %}
+  <div class="alert {{ 'alert-light' if snapshot.state == 'ok' else 'alert-warning' }} py-2">
+    {% if snapshot.updated_at %}{{ t('آخرین خواندن از ایزابل:') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>{% else %}{{ t('هنوز از ایزابل خوانده نشده است.') }}{% endif %}
+    {% if snapshot.state == 'stale' %} — {{ t('آخرین تلاش ناموفق بود؛ داده‌ی قبلی نمایش داده می‌شود.') }}{% endif %}
+    {% if snapshot.error %}<div class="small mt-1">{{ snapshot.error.fa }}</div>{% endif %}
+  </div>
+  {% if can('daynight.toggle') %}
+    {% if not cfg.write_enabled %}
+      <div class="alert alert-info py-2">{{ t('تعویض از این برنامه خاموش است (PBX_DAYNIGHT_WRITE_ENABLED=0)؛ فقط نمایش.') }}</div>
+    {% elif not write_ready %}
+      <div class="alert alert-warning py-2">{{ t('کاربر نوشتن AMI (PBX_AMI_WRITE_USER) تنظیم نشده است.') }}</div>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+{% if data %}
+{% if data.items_error %}<div class="alert alert-warning py-2">{{ t('نام و مقصد Call Flowها خوانده نشد:') }} {{ data.items_error.fa }}</div>{% endif %}
+<div class="table-responsive mb-4">
+  <table class="table align-middle compact-table">
+    <thead><tr><th>{{ t('Call Flow') }}</th><th>{{ t('حالت فعلی') }}</th><th>{{ t('مقصد در حالت روز') }}</th><th>{{ t('مقصد در حالت شب') }}</th><th>{{ t('آخرین تغییر') }}</th><th></th></tr></thead>
+    <tbody>
+      {% for item in data['items'] %}
+        {% set change = changes.get(item.index) %}
+        <tr>
+          <td><b>{{ item.name }}</b> <small class="text-muted" dir="ltr">(C{{ item.index }} · *28{{ item.index }})</small></td>
+          <td><span class="daynight-state daynight-{{ item.state|lower }}">{{ '☀' if item.state == 'DAY' else '☾' }} {{ t(state_labels[item.state]) }}</span>
+            {% if not item.has_key %}<small class="text-muted">({{ t('پیش‌فرض') }})</small>{% endif %}</td>
+          <td class="{{ 'fw-bold' if item.state == 'DAY' }}">{{ item.day_label or '—' }}</td>
+          <td class="{{ 'fw-bold' if item.state == 'NIGHT' }}">{{ item.night_label or '—' }}</td>
+          <td><small>
+            {% if change %}
+              {{ change.actor }} · <bdi dir="ltr">{{ change.created_at | local_dt('%Y/%m/%d %H:%M') }}</bdi><br>
+              <span class="{{ 'text-danger' if change.action == 'switch_failed' }}">{{ change.details }}</span>
+            {% else %}—{% endif %}
+          </small></td>
+          <td class="text-nowrap">
+            {% if can('daynight.toggle') and cfg.write_enabled and write_ready and item.index in cfg.allowed %}
+              <a class="btn btn-sm btn-outline-danger" href="{{ url_for('daynight_confirm', index=item.index) }}">
+                {{ t('تعویض به روز') if item.state == 'NIGHT' else t('تعویض به شب') }}</a>
+            {% elif can('daynight.toggle') and item.index not in cfg.allowed %}
+              <small class="text-muted">{{ t('خارج از فهرست مجاز') }}</small>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-center py-4 text-muted">{{ t('هیچ Call Flow Control‌ای پیدا نشد.') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if data.tcs is not none or data.tc_error %}
+<h2 class="h6">{{ t('شرط‌های زمانی (Time Conditions)') }}</h2>
+{% if data.tc_error %}<p class="text-muted small">{{ data.tc_error.fa }}</p>{% endif %}
+{% if data.tcs %}
+<table class="table compact-table mb-2">
+  <thead><tr><th>{{ t('نام') }}</th><th>{{ t('حالت') }}</th></tr></thead>
+  <tbody>
+    {% for tc in data.tcs %}
+      <tr><td>{{ tc.name or ('#' ~ tc.id) }}</td><td>{% if tc.override %}{{ t('دستی:') }} <bdi dir="ltr">{{ tc.override }}</bdi>{% else %}{{ t('خودکار (بر اساس ساعت)') }}{% endif %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<p class="text-muted small">{{ t('شرط‌های زمانی فقط نمایش داده می‌شوند؛ حالت «خودکار» یعنی ایزابل در لحظه‌ی هر تماس بر اساس ساعت تصمیم می‌گیرد.') }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

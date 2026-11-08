@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'daynight' %}
+{% block title %}Confirm Day and Night Switch{% endblock %}
+{% block content %}
+<a href="{{ url_for('daynight_page') }}" class="back-link no-print">{{ t('← بازگشت به حالت روز/شب') }}</a>
+<div class="panel p-4 mt-3 daynight-confirm">
+  <h1 class="h4 mb-3">{{ t('مطمئنی؟') }}</h1>
+  <p class="mb-2"><b>{{ item.name }}</b> <small class="text-muted" dir="ltr">(C{{ item.index }})</small>
+    {{ t('از حالت') }} «{{ t(state_labels[item.state]) }}» {{ t('به حالت') }} «{{ t(state_labels[target]) }}» {{ t('می‌رود.') }}</p>
+  <p class="fs-5 mb-3">
+    {{ t('تماس‌های ورودی از') }} <b>{{ (item.night_label if item.state == 'NIGHT' else item.day_label) or t('مقصد فعلی') }}</b>
+    {{ t('به') }} <b>{{ (item.night_label if target == 'NIGHT' else item.day_label) or t('مقصد حالت دیگر') }}</b> {{ t('می‌روند.') }}
+  </p>
+  <ul class="small text-muted">
+    <li>{{ t('قبل از نوشتن، وضعیت دوباره از ایزابل خوانده می‌شود؛ اگر کسی در این فاصله آن را عوض کرده باشد، کاری انجام نمی‌شود.') }}</li>
+    <li>{{ t('بعد از نوشتن، وضعیت دوباره خوانده و تأیید می‌شود. تلاش دوباره‌ی خودکار در کار نیست.') }}</li>
+    {% if devstate %}<li>{{ t('چراغ BLF تلفن‌ها هم به‌روز می‌شود.') }}</li>{% endif %}
+    <li>{{ t('این تغییر با نام شما، زمان و IP در لاگ فعالیت‌ها ثبت می‌شود.') }}</li>
+  </ul>
+  <form method="post" action="{{ url_for('daynight_switch', index=item.index) }}" onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='…';">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <input type="hidden" name="expected" value="{{ item.state }}">
+    <input type="hidden" name="target" value="{{ target }}">
+    <button type="submit" class="btn btn-danger">{{ t('بله، به حالت') }} «{{ t(state_labels[target]) }}» {{ t('برود') }}</button>
+    <a href="{{ url_for('daynight_page') }}" class="btn btn-link">{{ t('انصراف') }}</a>
+  </form>
+  {% if snapshot.updated_at %}<p class="small text-muted mt-3 mb-0">{{ t('وضعیت نمایش‌داده‌شده از خواندن') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%H:%M:%S') }}</bdi> {{ t('است.') }}</p>{% endif %}
+</div>
+{% endblock %}

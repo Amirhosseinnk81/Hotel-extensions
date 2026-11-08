@@ -4,6 +4,7 @@ The AMI framing, field names and status strings follow Asterisk 18.6.0's chan_si
 sample peers / User-Agents are taken from the hotel's real `sip show peers` / `sip show peer`
 output. A small fake AMI server speaks the real protocol, so the client is tested end to end.
 """
+import hashlib
 import os
 import socket
 import socketserver
@@ -114,8 +115,18 @@ class FakeAMIHandler(socketserver.StreamRequestHandler):
                 return
             name = action.get('Action')
             server.seen.append(action)
-            if name == 'Login':
-                ok = action.get('Username') == server.username and action.get('Secret') == server.secret
+            custom = server.answer(action) if hasattr(server, 'answer') else None  # hook for other test files
+            if custom is not None:
+                self.send(custom)
+            elif name == 'Challenge':
+                self.challenge = '840415273'
+                self.send(f'Response: Success\r\nChallenge: {self.challenge}\r\n\r\n')
+            elif name == 'Login':
+                if action.get('AuthType', '').lower() == 'md5':
+                    expected = hashlib.md5((getattr(self, 'challenge', '') + server.secret).encode()).hexdigest()
+                    ok = action.get('Username') == server.username and action.get('Key') == expected
+                else:
+                    ok = action.get('Username') == server.username and action.get('Secret') == server.secret
                 self.send('Response: Success\r\nMessage: Authentication accepted\r\n\r\n' if ok
                           else 'Response: Error\r\nMessage: Authentication failed\r\n\r\n')
                 if not ok:
@@ -136,6 +147,8 @@ class FakeAMIHandler(socketserver.StreamRequestHandler):
             elif name == 'Logoff':
                 self.send('Response: Goodbye\r\nMessage: Thanks for all the fish.\r\n\r\n')
                 return
+            else:  # what Asterisk answers for an action it does not know
+                self.send('Response: Error\r\nMessage: Invalid/unknown command\r\n\r\n')
 
 
 class FakeAMIServer(socketserver.ThreadingTCPServer):
@@ -177,8 +190,11 @@ class AMIClientTests(AMIServerCase):
         self.assertEqual((peers['101'].state, peers['101'].rtt_ms, peers['101'].ip), ('online', 5, '192.168.231.247'))
         self.assertEqual(peers['1004'].state, 'offline')
         self.assertEqual(peers['1004'].ip, '')
-        login = server.seen[0]
+        self.assertEqual(server.seen[0]['Action'], 'Challenge')
+        login = server.seen[1]
         self.assertEqual(login['Events'], 'off')  # no event flood, no read permission needed
+        self.assertNotIn('Secret', login)  # MD5 challenge: the secret itself never crosses the network
+        self.assertNotIn(server.secret, str(server.seen))
 
     def test_works_when_the_pbx_answers_in_tiny_pieces(self):
         server = self.serve(drip=True)

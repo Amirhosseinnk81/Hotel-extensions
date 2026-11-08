@@ -19,7 +19,8 @@ from logging.handlers import RotatingFileHandler
 
 
 
-from flask import Flask, abort, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import (Flask, Response, abort, flash, g, has_app_context, has_request_context, jsonify, redirect, render_template, request,
+                   send_file, session, url_for)
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
@@ -46,7 +47,16 @@ import i18n
 import outage_alerts
 import outage_monitor
 import outage_report
-from pbx_sync import AMIClient, AMIError, fetch_peers, fetch_user_agent, parse_user_agent, shared_scraper
+import pbx_cdr
+import pbx_connectors
+import pbx_daynight
+import pbx_directory_sync
+import pbx_dnd
+import pbx_health
+import pbx_recordings
+import pbx_snapshot
+from pbx_sync import (AMIClient, AMIError, IssabelWebScraper, PBXWebLoginRejected, fetch_peers, fetch_user_agent, page_to_text,
+                      parse_user_agent, shared_scraper)
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -761,7 +771,14 @@ class ActivityLog(db.Model):
     entity_type = db.Column(db.String(30), nullable=False)  # extension / department
     entity_label = db.Column(db.String(200), nullable=False)
     details = db.Column(db.String(300))
+    ip = db.Column(db.String(45))  # client address of the request that did it (empty for background jobs)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RoleDefaultGrant(db.Model):
+    """A permission from features.MIGRATED_DEFAULTS that has already been given to the built-in roles once."""
+    permission_key = db.Column(db.String(64), primary_key=True)
+    applied_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class PhoneOutage(db.Model):
@@ -793,12 +810,26 @@ class OutageEvent(db.Model):
     batch is the sync cycle that produced the event: events of one cycle count as simultaneous,
     which is what the summary alert ("12 phones went offline together") is built on."""
     id = db.Column(db.Integer, primary_key=True)
-    kind = db.Column(db.String(8), nullable=False)  # offline / online
+    # phone: kind offline / online for one extension; pbx: kind raised / cleared for a health check of
+    # the Issabel server (extension = disk / cpu / asterisk / trunk, title = what it is about)
+    category = db.Column(db.String(10), default='phone', nullable=False, index=True)
+    kind = db.Column(db.String(8), nullable=False)  # offline / online (phone), raised / cleared (pbx)
     batch = db.Column(db.DateTime, nullable=False)
     extension = db.Column(db.String(20), nullable=False)
     title = db.Column(db.String(150))
     detail = db.Column(db.String(20))  # offline: local start time 'HH:MM'; online: how long it was down
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class PbxAlertState(db.Model):
+    """Current state of one Issabel health check (pbx_health.py), kept so a restart neither repeats
+    nor forgets an alert. key: disk / cpu / asterisk / trunk:<name>."""
+    key = db.Column(db.String(160), primary_key=True)
+    active = db.Column(db.Boolean, default=False, nullable=False)
+    count = db.Column(db.Integer, default=0, nullable=False)
+    since = db.Column(db.DateTime)
+    subject = db.Column(db.String(150))
+    detail = db.Column(db.String(40))
 
 
 def _ensure_columns(engine):
@@ -832,6 +863,11 @@ def _ensure_columns(engine):
         statements.append('ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL')
     if 'last_login_at' not in existing_user_cols:
         statements.append('ALTER TABLE user ADD COLUMN last_login_at DATETIME')
+    if 'activity_log' in inspector.get_table_names() and 'ip' not in {c['name'] for c in inspector.get_columns('activity_log')}:
+        statements.append('ALTER TABLE activity_log ADD COLUMN ip VARCHAR(45)')
+    if 'outage_event' in inspector.get_table_names() and 'category' not in {c['name'] for c in inspector.get_columns('outage_event')}:
+        statements.append("ALTER TABLE outage_event ADD COLUMN category VARCHAR(10) DEFAULT 'phone' NOT NULL")
+        statements.append('CREATE INDEX IF NOT EXISTS ix_outage_event_category ON outage_event (category)')
     new_columns = (
         ('kind', "VARCHAR(10) DEFAULT 'staff' NOT NULL"),
         ('mac', 'VARCHAR(17)'),
@@ -872,7 +908,8 @@ def bump_data_version():
 
 def log_activity(action, entity_type, entity_label, details=None):
     actor = current_user.display_name if getattr(current_user, 'is_authenticated', False) else 'system'
-    db.session.add(ActivityLog(actor=actor, action=action, entity_type=entity_type, entity_label=entity_label, details=details))
+    ip = (request.remote_addr or '')[:45] if has_request_context() else None
+    db.session.add(ActivityLog(actor=actor, action=action, entity_type=entity_type, entity_label=entity_label, details=details, ip=ip or None))
 
 
 def get_cached_stats():
@@ -1032,6 +1069,7 @@ def pbx_config():
         source = 'ami' if ami_ready else 'web' if web_ready else None
     return {
         'host': host, 'port': number('PBX_AMI_PORT', '5038'), 'user': user, 'secret': secret,
+        'auth': os.getenv('PBX_AMI_AUTH', '').strip().lower() or 'md5',  # md5 challenge (default) or plain
         'web_host': web_host, 'web_user': web_user, 'web_pass': web_pass,
         'web_verify_ssl': flag('PBX_VERIFY_SSL', False),  # Issabel's own certificate is self-signed
         'web_timeout': number('PBX_WEB_TIMEOUT', '10', float),
@@ -1051,8 +1089,253 @@ def pbx_config():
         'alert_summary_threshold': max(1, number('PBX_ALERT_SUMMARY_THRESHOLD', '5')),  # more phones than this at once -> one summary alert
         'alert_on_recovery': flag('PBX_ALERT_ON_RECOVERY', True),  # quiet alert when a phone comes back
         'outage_keep_days': max(0, number('PBX_OUTAGE_KEEP_DAYS', '180')),  # 0 = never delete old outages
+        # 1 (default): peers that are not in the directory are created hidden (room / pending), as before.
+        # 0: they are left out and only listed on the "compare with Issabel" page, to be added by hand.
+        'auto_create': flag('PBX_AUTO_CREATE', True),
         'enabled': source is not None,
     }
+
+
+_cdr_stats_cache = pbx_cdr.TTLCache(ttl=60)  # identical statistics requests within a minute reuse the answer
+
+
+def make_cdr_client():
+    """Read-only CDR access (replaced by a fake in the tests)."""
+    return pbx_connectors.CdrClient(pbx_connectors.load_settings())
+
+
+def cdr_rules():
+    return pbx_cdr.load_rules(os.environ, LOCAL_TZ)
+
+
+def load_dnd_snapshot(app_obj, reader_factory=None):
+    """DND / forward of every extension in the directory, in one read-only AMI session (snapshot loader)."""
+    with app_obj.app_context():
+        extensions = [e.extension for e in Extension.query.filter(Extension.is_deleted == False).all()  # noqa: E712
+                      if PBX_EXTENSION_NAME.match(e.extension)]
+    settings = pbx_connectors.load_settings()
+    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+        return pbx_dnd.read_snapshot(reader, extensions)
+
+
+def load_pbx_directory(reader_factory=None):
+    """Issabel's extension list (snapshot loader): the MySQL user if configured (with display names), else AMI."""
+    settings = pbx_connectors.load_settings()
+    if settings.cdr.ready:
+        return pbx_directory_sync.read_pbx_extensions(cdr_client=make_cdr_client())
+    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+        return pbx_directory_sync.read_pbx_extensions(ami_reader=reader)
+
+
+def register_directory_snapshot():
+    """Extension lists change rarely: read at most every 15 minutes (or PBX_SNAPSHOT_TTL if longer)."""
+    settings = pbx_connectors.load_settings()
+    if not (settings.cdr.ready or settings.ami.ready):
+        pbx_snapshot.forget(pbx_directory_sync.SNAPSHOT_NAME)
+        return None
+    return pbx_snapshot.register(pbx_directory_sync.SNAPSHOT_NAME, load_pbx_directory, max(settings.snapshot_ttl, 900), min_interval=30)
+
+
+_rec_scraper = {'key': None, 'scraper': None}
+_rec_limiter = {'limit': None, 'limiter': None}
+RECORDING_TYPES = {'wav': 'audio/wav', 'wav49': 'audio/wav', 'mp3': 'audio/mpeg', 'ogg': 'audio/ogg', 'gsm': 'audio/x-gsm'}
+
+
+def recordings_scraper():
+    """Web-panel session used only for recordings: PBX_REC_WEB_USER / PBX_REC_WEB_PASS (a panel user that may open
+    only the Monitoring module), else the normal PBX_WEB_* user. None when no web panel is configured."""
+    cfg = pbx_config()
+    own_user = os.getenv('PBX_REC_WEB_USER', '').strip()
+    user, password = (own_user, os.getenv('PBX_REC_WEB_PASS', '')) if own_user else (cfg['web_user'], cfg['web_pass'])
+    if not (cfg['web_host'] and user and password):
+        return None
+    key = (cfg['web_host'], user, password, cfg['web_verify_ssl'], cfg['web_timeout'], cfg['web_login_path'])
+    if _rec_scraper['key'] != key:  # its own session, so it never logs the phone-sync session out
+        _rec_scraper['scraper'] = IssabelWebScraper(cfg['web_host'], user, password, cfg['web_verify_ssl'], cfg['web_timeout'],
+                                                    cfg['web_login_path'], cfg['web_peers_path'])
+        _rec_scraper['key'] = key
+    return _rec_scraper['scraper']
+
+
+def recording_download_limiter():
+    try:
+        limit = int(os.getenv('PBX_REC_DOWNLOADS_PER_HOUR', '20') or 20)
+    except ValueError:
+        limit = 20
+    if _rec_limiter['limit'] != limit:
+        _rec_limiter['limit'], _rec_limiter['limiter'] = limit, pbx_recordings.RateLimiter(limit)
+    return _rec_limiter['limiter']
+
+
+daynight_lock = threading.Lock()  # one switch at a time, whoever clicks
+
+
+def daynight_config():
+    def flag(name, default):
+        raw = os.getenv(name, '').strip().lower()
+        return default if not raw else raw in ('1', 'true', 'yes', 'on')
+
+    method = os.getenv('PBX_DAYNIGHT_WRITE_METHOD', '').strip().lower()
+    return {'allowed': pbx_daynight.parse_whitelist(os.getenv('PBX_DAYNIGHT_ALLOWED', '')),
+            'write_enabled': flag('PBX_DAYNIGHT_WRITE_ENABLED', False),  # off until tested on the real PBX
+            'method': method if method in pbx_daynight.WRITE_METHODS else 'setvar',
+            'devstate': flag('PBX_DAYNIGHT_DEVSTATE', True),
+            'labels': pbx_daynight.parse_labels(os.getenv('PBX_DAYNIGHT_LABELS', '')),
+            'table': pbx_daynight.safe_table(os.getenv('PBX_DAYNIGHT_TABLE', '').strip())}
+
+
+def load_daynight(reader_factory=None):
+    """Call Flow names / destinations (MySQL, optional) and their current state (AMI). Snapshot loader; read-only."""
+    settings, cfg = pbx_connectors.load_settings(), daynight_config()
+    items, items_error, tcs, tc_error = {}, None, None, None
+    if settings.cdr.ready:
+        client = make_cdr_client()
+        try:
+            items = pbx_daynight.parse_items(client.select(pbx_daynight.ITEMS_SQL.format(table=cfg['table']), max_rows=200))
+        except pbx_connectors.ConnectorError as exc:
+            items_error = exc
+        try:
+            tcs = [{'id': int(r['timeconditions_id']), 'name': str(r.get('displayname') or '')[:80]}
+                   for r in client.select(pbx_daynight.TC_SQL, max_rows=200) if str(r.get('timeconditions_id', '')).isdigit()]
+        except pbx_connectors.ConnectorError as exc:
+            tc_error = exc
+    indexes = set(items) | cfg['allowed'] | set(cfg['labels'])
+    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+        if indexes:
+            states, present = pbx_daynight.read_states(reader, indexes)
+        else:  # nothing known yet: look for any Call Flow that has a state
+            states, present = pbx_daynight.read_states(reader, pbx_daynight.INDEXES)
+            indexes = present
+        overrides = {tc['id']: reader.db_get('TC', str(tc['id'])) for tc in (tcs or [])[:50]}
+    rows = []
+    for index in sorted(indexes):
+        item = items.get(index, {})
+        rows.append({'index': index, 'name': item.get('name') or cfg['labels'].get(index) or f'Call Flow {index}',
+                     'state': states[index], 'has_key': index in present,
+                     'day': item.get('day', ''), 'night': item.get('night', ''),
+                     'day_label': pbx_daynight.describe_destination(item.get('day')),
+                     'night_label': pbx_daynight.describe_destination(item.get('night'))})
+    for tc in tcs or []:
+        tc['override'] = overrides.get(tc['id'])
+    return {'items': rows, 'items_error': items_error, 'tcs': tcs, 'tc_error': tc_error}
+
+
+def register_daynight_snapshot():
+    settings = pbx_connectors.load_settings()
+    if not settings.ami.ready:
+        pbx_snapshot.forget(pbx_daynight.SNAPSHOT_NAME)
+        return None
+    return pbx_snapshot.register(pbx_daynight.SNAPSHOT_NAME, load_daynight, settings.snapshot_ttl, min_interval=30)
+
+
+def health_web_paths():
+    """Issabel panel pages whose text holds CPU / memory / disk / services (PBX_WEB_HEALTH_PATHS, comma separated)."""
+    raw = os.getenv('PBX_WEB_HEALTH_PATHS', '').strip() or '/index.php?menu=dashboard'
+    return [p.strip() for p in raw.split(',') if p.strip()][:5]
+
+
+def _web_error(exc):
+    text = str(exc).lower()
+    kind = 'auth' if isinstance(exc, PBXWebLoginRejected) else 'unreachable' if 'cannot reach' in text else 'protocol'
+    return pbx_connectors.ConnectorError(kind, str(exc), 'web')
+
+
+def read_health(reader_factory=None, scraper=None):
+    """One reading of the Issabel server: the AMI part and the dashboard part, each allowed to fail alone.
+    Raises ConnectorError only when nothing at all could be read (the snapshot then stays 'stale')."""
+    settings, cfg = pbx_connectors.load_settings(), pbx_config()
+    web_ready = bool(cfg['web_host'] and cfg['web_user'] and cfg['web_pass'])
+    if not settings.ami.ready and not web_ready and scraper is None:
+        raise pbx_connectors.ConnectorError('config', 'neither AMI nor the web panel is configured', 'health')
+    reading = {'ami_ok': False, 'ami_error': None, 'core': None, 'driver': None, 'trunks': [],
+               'dashboard': None, 'web_error': None, 'asterisk': None}
+    if settings.ami.ready:
+        try:
+            with (reader_factory or pbx_connectors.AmiReader)(settings) as ami:
+                reading['core'] = ami.core_status()
+                driver, events = ami.registry()
+                reading.update(ami_ok=True, driver=driver, trunks=pbx_health.parse_trunks(driver, events))
+        except pbx_connectors.ConnectorError as exc:
+            reading['ami_error'] = exc
+    if web_ready or scraper is not None:
+        try:
+            scraper = scraper or shared_scraper(cfg['web_host'], cfg['web_user'], cfg['web_pass'], cfg['web_verify_ssl'],
+                                                cfg['web_timeout'], cfg['web_login_path'], cfg['web_peers_path'])
+            dashboard = pbx_health.parse_dashboard('\n'.join(page_to_text(scraper.fetch_path(p)) for p in health_web_paths()))
+            if not pbx_health.has_values(dashboard):
+                raise pbx_connectors.ConnectorError('protocol', 'no CPU / memory / disk / service values on PBX_WEB_HEALTH_PATHS', 'web')
+            reading['dashboard'] = dashboard
+        except pbx_connectors.ConnectorError as exc:
+            reading['web_error'] = exc
+        except AMIError as exc:  # PBXWebError
+            reading['web_error'] = _web_error(exc)
+    if not reading['ami_ok'] and reading['dashboard'] is None:
+        raise reading['ami_error'] or reading['web_error']
+    reading['asterisk'] = pbx_health.asterisk_state(reading['ami_ok'], (reading['dashboard'] or {}).get('services'))
+    return reading
+
+
+def apply_health_alerts(reading, now=None):
+    """Hysteresis step for one reading; stores the states and, when enabled, the bell events. App context needed."""
+    thresholds = pbx_health.load_thresholds(os.environ)
+    now = now or datetime.utcnow()
+    rows = {row.key: row for row in PbxAlertState.query.all()}
+    states = {key: pbx_health.AlertState(row.active, row.count, row.since, row.subject or '', row.detail or '') for key, row in rows.items()}
+    events = pbx_health.evaluate(states, pbx_health.observations(reading, thresholds), thresholds, now, reading['ami_ok'])
+    for key in set(rows) - set(states):
+        db.session.delete(rows[key])
+    for key, state in states.items():
+        row = rows.get(key)
+        if row is None:
+            row = PbxAlertState(key=key[:160])
+            db.session.add(row)
+        row.active, row.count, row.since = state.active, state.count, state.since
+        row.subject, row.detail = (state.subject or '')[:150], (state.detail or '')[:40]
+    if thresholds.alerts:
+        for kind, key, subject, detail in events:
+            db.session.add(OutageEvent(category='pbx', kind=kind, batch=now, extension=pbx_health.kind_of(key)[:20],
+                                       title=(subject or '')[:150], detail=(detail or '')[:20]))
+    db.session.commit()
+    return events
+
+
+def load_health_snapshot(app_obj):
+    reading = read_health()
+    with app_obj.app_context():
+        try:
+            apply_health_alerts(reading)
+        except Exception:  # alert bookkeeping must not hide the reading itself
+            db.session.rollback()
+            app_obj.logger.exception('Issabel health alerts failed')
+    return reading
+
+
+def health_sources_ready():
+    """AMI or the web panel is configured right now (the health page needs at least one of them)."""
+    settings, cfg = pbx_connectors.load_settings(), pbx_config()
+    return bool(settings.ami.ready or (cfg['web_host'] and cfg['web_user'] and cfg['web_pass']))
+
+
+def health_alerts_enabled():
+    return (health_sources_ready() and pbx_health.SNAPSHOT_NAME in pbx_snapshot.names()
+            and pbx_health.load_thresholds(os.environ).alerts)
+
+
+def register_health_snapshot(app_obj):
+    settings = pbx_connectors.load_settings()
+    if not health_sources_ready():
+        pbx_snapshot.forget(pbx_health.SNAPSHOT_NAME)
+        return None
+    return pbx_snapshot.register(pbx_health.SNAPSHOT_NAME, lambda: load_health_snapshot(app_obj), settings.snapshot_ttl, min_interval=30)
+
+
+def register_dnd_snapshot(app_obj):
+    """The DND snapshot exists only when AMI is configured (the web panel has no AstDB)."""
+    settings = pbx_connectors.load_settings()
+    if not settings.ami.ready:
+        pbx_snapshot.forget(pbx_dnd.SNAPSHOT_NAME)
+        return None
+    return pbx_snapshot.register(pbx_dnd.SNAPSHOT_NAME, lambda: load_dnd_snapshot(app_obj), settings.snapshot_ttl, min_interval=30)
 
 
 OUTAGE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
@@ -1147,7 +1430,7 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     use_web = client_factory is None and (web_scraper is not None or cfg['source'] == 'web')
     if client_factory is None and not use_web:
         def client_factory():
-            return AMIClient(cfg['host'], cfg['port'], cfg['user'], cfg['secret'], cfg['timeout'])
+            return AMIClient(cfg['host'], cfg['port'], cfg['user'], cfg['secret'], cfg['timeout'], auth=cfg['auth'])
 
     entries = {e.extension: e for e in Extension.query.all()}  # includes trashed rows
     agents = {}
@@ -1177,13 +1460,16 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
             for name in targets:
                 agents[name] = fetch_user_agent(client, name)
 
-    created = in_trash = 0
+    created = in_trash = not_in_book = 0
     counts = {'online': 0, 'offline': 0, 'unknown': 0}
     monitor = make_outage_tracker(cfg) if cfg['outage_enabled'] else None
     observed = set()
     fresh = timedelta(minutes=PBX_STATUS_STALE_MINUTES)
     for name, peer in numeric.items():
         entry = entries.get(name)
+        if entry is None and not cfg['auto_create']:
+            not_in_book += 1  # listed on the comparison page instead
+            continue
         if entry is None:
             kind = suggest_kind(name)
             entry = Extension(extension=name, title=('اتاق ' if kind == 'room' else 'داخلی ') + name,
@@ -1242,7 +1528,7 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
             db.session.rollback()
             logging.getLogger('hotel.purge').exception('purging old outage records failed')
     return {'peers': len(peers), 'extensions': len(numeric), 'ignored': len(peers) - len(numeric), 'created': created,
-            'in_trash': in_trash, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2),
+            'in_trash': in_trash, 'not_in_book': not_in_book, 'not_on_pbx': not_on_pbx, 'user_agents': len(agents), 'seconds': round(time.monotonic() - started, 2),
             'went_offline': monitor.went_offline if monitor else 0, 'came_online': monitor.came_online if monitor else 0, **counts}
 
 
@@ -1290,6 +1576,7 @@ def start_pbx_sync_thread(app_obj):
     def loop():
         while True:
             run_pbx_sync(app_obj)
+            pbx_snapshot.refresh_due()  # DND / health / ... snapshots, each at most once per its TTL
             if stop.wait(pbx_config()['interval']):
                 break
 
@@ -1469,6 +1756,8 @@ def create_app():
         db.create_all()
         _ensure_columns(db.engine)
         seed_roles()
+        for key in apply_migrated_defaults():
+            app.logger.info('Default roles got the new permission %s (once)', key)
         migrated = migrate_users_to_roles()
         if migrated:
             app.logger.warning('RBAC migration: %d existing user(s) assigned to the Super Admin role', migrated)
@@ -2742,6 +3031,13 @@ def create_app():
         if is_admin:
             payload['sync'] = {'source': cfg['source'], 'running': pbx_sync_state['running'], 'last_attempt': iso_utc(pbx_sync_state['last_attempt']),
                                'last_error': pbx_sync_state['last_error']}
+        if user_can(current_user, 'dnd.view') and pbx_connectors.load_settings().ami.ready:
+            # from the cached snapshot only: polling this endpoint never reaches the PBX
+            snapshot = pbx_snapshot.get(pbx_dnd.SNAPSHOT_NAME)
+            data = snapshot.data or {}
+            payload['flags'] = {'state': snapshot.state, 'updated_at': iso_utc(snapshot.updated_at),
+                                'scanned': data.get('scanned', []) if snapshot.state != 'unknown' else [],
+                                'items': {ext: pbx_dnd.state_of(snapshot, ext) for ext in data.get('flags', {})} if snapshot.state != 'unknown' else {}}
         return no_store(jsonify(payload))
 
     # ---- Outage report (admin) and the alert feed the browser polls ------------------------
@@ -2813,16 +3109,28 @@ def create_app():
         Without a usable `after` (first call, or the database was reset) only `latest_id` comes back, so a
         freshly opened browser starts from 'now' instead of replaying history."""
         cfg = pbx_config()
-        latest = db.session.query(func.max(OutageEvent.id)).scalar() or 0
-        payload = {'ok': True, 'enabled': cfg['alerts_enabled'], 'latest_id': latest, 'alerts': []}
+        return alert_feed('phone', cfg['alerts_enabled'], lambda events: outage_alerts.plan_alerts(
+            events, cfg['alert_summary_threshold'], cfg['alert_on_recovery'], url_for('outages_report')))
+
+    def alert_feed(category, enabled, plan):
+        """New alert events of one category since `after` (see api_outage_alerts)."""
+        latest = db.session.query(func.max(OutageEvent.id)).filter(OutageEvent.category == category).scalar() or 0
+        payload = {'ok': True, 'enabled': enabled, 'latest_id': latest, 'alerts': []}
         after = request.args.get('after', type=int)
-        if not cfg['alerts_enabled'] or after is None or after < 0 or after > latest:
+        if not enabled or after is None or after < 0 or after > latest:
             return no_store(jsonify(payload))
         fresh_from = datetime.utcnow() - timedelta(minutes=OUTAGE_ALERT_MAX_AGE_MINUTES)
         events = [{'id': e.id, 'kind': e.kind, 'batch': iso_utc(e.batch), 'extension': e.extension, 'title': e.title, 'detail': e.detail}
-                  for e in OutageEvent.query.filter(OutageEvent.id > after, OutageEvent.created_at >= fresh_from).order_by(OutageEvent.id).limit(500).all()]
-        payload['alerts'] = outage_alerts.plan_alerts(events, cfg['alert_summary_threshold'], cfg['alert_on_recovery'], url_for('outages_report'))
+                  for e in OutageEvent.query.filter(OutageEvent.category == category, OutageEvent.id > after,
+                                                    OutageEvent.created_at >= fresh_from).order_by(OutageEvent.id).limit(500).all()]
+        payload['alerts'] = plan(events)
         return no_store(jsonify(payload))
+
+    @app.route('/api/pbx/health-alerts')
+    @require_permission('pbxhealth.alerts')
+    def api_pbx_health_alerts():
+        """Issabel health alerts (disk / CPU / Asterisk / trunks) for the same bell; same protocol as api_outage_alerts."""
+        return alert_feed('pbx', health_alerts_enabled(), lambda events: outage_alerts.plan_health_alerts(events, url_for('pbx_health_page')))
 
     @app.route('/api/pbx/sync-now', methods=['POST'])
     @require_permission('pbx.sync')
@@ -2834,6 +3142,474 @@ def create_app():
         if ok:
             return no_store(jsonify(ok=True, summary=result, last_sync=iso_utc(pbx_sync_state['last_success'])))
         return no_store(jsonify(ok=False, error=str(result))), (409 if pbx_sync_lock.locked() else 502)
+
+    # ---- Call report from the CDR (read-only; nothing is copied into this database) ---------------
+    def cdr_ready():
+        return pbx_connectors.load_settings().cdr.ready
+
+    @app.route(f'/{admin_prefix}/calls')
+    @require_permission('calls.view')
+    def calls_report():
+        rules = cdr_rules()
+        filters, warnings = pbx_cdr.parse_filters(request.args, rules, pbx_cdr.hotel_today(rules))
+        jalali = current_lang() == 'fa'
+        rows, total, summary, error = [], 0, None, None
+        configured = cdr_ready()
+        if configured:
+            client = make_cdr_client()
+            try:
+                total = int(client.select(*pbx_cdr.count_query(filters, rules), max_rows=1)[0]['n'])
+                rows = [pbx_cdr.present_row(r, rules, jalali)
+                        for r in client.select(*pbx_cdr.page_query(filters, rules), max_rows=pbx_cdr.PAGE_SIZE)]
+                key = pbx_cdr.cache_key(filters)
+                summary = _cdr_stats_cache.get(key)
+                if summary is None:
+                    results = {name: client.select(sql, params, max_rows=100)
+                               for name, (sql, params) in pbx_cdr.stats_queries(filters, rules).items()}
+                    summary = pbx_cdr.summarize(results, rules)
+                    _cdr_stats_cache.put(key, summary)
+            except pbx_connectors.ConnectorError as exc:
+                app.logger.warning('Call report failed: %s', exc)
+                error = exc.fa
+        reachable = min(total, rules.max_rows)
+        pages = max(1, -(-reachable // pbx_cdr.PAGE_SIZE))
+        return render_template('calls.html', rows=rows, total=total, summary=summary, error=error, warnings=warnings,
+                               configured=configured, filters=filters, rules=rules, pages=pages, page=min(filters.page, pages),
+                               jalali_text=pbx_cdr.jalali_text, format_seconds=pbx_cdr.format_seconds,
+                               direction_labels=pbx_cdr.DIRECTION_LABELS, status_labels=pbx_cdr.STATUS_LABELS)
+
+    @app.route(f'/{admin_prefix}/calls/export.csv')
+    @require_permission('calls.export')
+    def calls_export():
+        rules = cdr_rules()
+        filters, _warnings = pbx_cdr.parse_filters(request.args, rules, pbx_cdr.hotel_today(rules))
+        back = url_for('calls_report', **filters.as_args())
+        if not cdr_ready():
+            flash('اتصال به CDR ایزابل تنظیم نشده است.', 'warning')
+            return redirect(back)
+        try:
+            raw = make_cdr_client().select(*pbx_cdr.export_query(filters, rules), max_rows=rules.export_rows)
+        except pbx_connectors.ConnectorError as exc:
+            app.logger.warning('Call export failed: %s', exc)
+            flash('خروجی گرفته نشد.', 'danger')
+            flash(exc.fa, 'danger')
+            return redirect(back)
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(['time', 'time_jalali', 'src', 'dst', 'direction', 'status', 'disposition', 'duration_seconds',
+                         'billsec', 'lastapp', 'uniqueid'])
+        for item in raw:
+            row = pbx_cdr.present_row(item, rules, jalali=False)
+            row_fa = pbx_cdr.format_call_time(item.get('calldate'), rules, jalali=True)
+            writer.writerow([outage_report.csv_safe(v) for v in (
+                row['time'], row_fa, row['src'], row['dst'], row['direction'], row['status'], row['disposition'],
+                row['duration'], row['billsec'], row['lastapp'], row['uniqueid'])])
+        conditions = [f'{len(raw)} ردیف']
+        if filters.extension:
+            conditions.append(f'داخلی {filters.extension}')
+        if filters.direction:
+            conditions.append(pbx_cdr.DIRECTION_LABELS[filters.direction])
+        if filters.status:
+            conditions.append(pbx_cdr.STATUS_LABELS[filters.status])
+        log_activity('exported', 'calls', f'گزارش تماس‌ها {pbx_cdr.jalali_text(filters.day_from)} تا {pbx_cdr.jalali_text(filters.day_to)}',
+                     details='، '.join(conditions))
+        db.session.commit()
+        name = f'calls_{filters.day_from:%Y%m%d}_{filters.day_to:%Y%m%d}.csv'
+        response = send_file(io.BytesIO(buffer.getvalue().encode('utf-8-sig')), mimetype='text/csv', as_attachment=True, download_name=name)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    # ---- Call recordings (list from the CDR; audio streamed from Issabel, never stored, never changed) --
+    @app.route(f'/{admin_prefix}/recordings')
+    @require_permission('recordings.view')
+    def recordings_list():
+        rules = cdr_rules()
+        filters, warnings = pbx_cdr.parse_filters(request.args, rules, pbx_cdr.hotel_today(rules))
+        jalali = current_lang() == 'fa'
+        rows, total, error = [], 0, None
+        configured = cdr_ready()
+        if configured:
+            client = make_cdr_client()
+            try:
+                total = int(client.select(*pbx_cdr.recordings_count_query(filters, rules), max_rows=1)[0]['n'])
+                for raw in client.select(*pbx_cdr.recordings_query(filters, rules), max_rows=pbx_cdr.PAGE_SIZE):
+                    row = pbx_cdr.present_row(raw, rules, jalali)
+                    row['playable'] = pbx_recordings.valid_uniqueid(row['uniqueid']) and \
+                        pbx_recordings.safe_recording_name(raw.get('recordingfile')) is not None
+                    rows.append(row)
+            except pbx_connectors.ConnectorError as exc:
+                app.logger.warning('Recording list failed: %s', exc)
+                error = exc.fa
+        pages = max(1, -(-min(total, rules.max_rows) // pbx_cdr.PAGE_SIZE))
+        return render_template('recordings.html', rows=rows, total=total, error=error, warnings=warnings, configured=configured,
+                               web_ready=recordings_scraper() is not None, filters=filters, rules=rules, pages=pages,
+                               page=min(filters.page, pages), jalali_text=pbx_cdr.jalali_text, format_seconds=pbx_cdr.format_seconds,
+                               per_hour=recording_download_limiter().limit)
+
+    def recording_proxy(uniqueid, download):
+        """Stream one recording from Issabel's own download address through this app (see pbx_recordings.py)."""
+        def fail(message, status):
+            if download:
+                flash(message, 'danger')
+                return redirect(url_for('recordings_list'))
+            return Response(message, status=status, mimetype='text/plain', headers={'Cache-Control': 'no-store'})
+
+        if not pbx_recordings.valid_uniqueid(uniqueid):
+            abort(404)
+        if not cdr_ready():
+            return fail('اتصال به CDR ایزابل تنظیم نشده است.', 503)
+        try:
+            rows = make_cdr_client().select(pbx_cdr.RECORDING_SQL, (uniqueid,), max_rows=1)
+        except pbx_connectors.ConnectorError as exc:
+            app.logger.warning('Recording lookup failed: %s', exc)
+            return fail(exc.fa, 502)
+        if not rows:
+            abort(404)
+        row = rows[0]
+        name = pbx_recordings.safe_recording_name(row.get('recordingfile'))
+        if name is None:
+            app.logger.warning('Refused the recording file name of call %s (outside the recordings folder or not audio)', uniqueid)
+            abort(404)
+        if download and not recording_download_limiter().allow(current_user.id):
+            return fail('سقف دانلود ضبط‌ها در این ساعت پر شده است؛ کمی بعد دوباره امتحان کنید.', 429)
+        scraper = recordings_scraper()
+        if scraper is None:
+            return fail('اتصال وب‌پنل ایزابل برای ضبط‌ها تنظیم نشده است.', 503)
+        range_header = None if download else pbx_recordings.clean_range(request.headers.get('Range'))
+        template = os.getenv('PBX_REC_DOWNLOAD_PATH', '').strip() or pbx_recordings.DEFAULT_DOWNLOAD_PATH
+        try:
+            upstream = scraper.open_stream(pbx_recordings.download_path(template, uniqueid, name),
+                                           {'Range': range_header} if range_header else None)
+        except AMIError as exc:
+            app.logger.warning('Recording fetch failed: %s', exc)
+            return fail(_web_error(exc).fa, 502)
+        content_type = upstream.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        if content_type in ('application/octet-stream', 'application/x-download', 'application/force-download', ''):
+            content_type = RECORDING_TYPES.get(name.rpartition('.')[2].lower(), 'application/octet-stream')
+        elif not content_type.startswith('audio/'):
+            upstream.close()
+            return fail('ایزابل فایل صوتی برنگرداند.', 502)
+        if download or pbx_recordings.starts_playback(range_header):  # seeking inside one playback is not logged again
+            rules = cdr_rules()
+            log_activity('downloaded' if download else 'listened', 'recording',
+                         f"{pbx_cdr.format_call_time(row.get('calldate'), rules)} — {pbx_recordings.mask_number(row.get('src'))}"
+                         f" → {pbx_recordings.mask_number(row.get('dst'))}", details=f'uniqueid {uniqueid}')
+            db.session.commit()
+        headers = {'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff',
+                   'Content-Disposition': f"{'attachment' if download else 'inline'}; filename=\"{pbx_recordings.download_name(name)}\"",
+                   'Accept-Ranges': 'none' if download else upstream.headers.get('Accept-Ranges', 'none')}
+        for header in ('Content-Length', 'Content-Range'):
+            if upstream.headers.get(header):
+                headers[header] = upstream.headers[header]
+        try:
+            limit = max(1, int(os.getenv('PBX_REC_MAX_MB', '300') or 300)) * 1024 * 1024
+        except ValueError:
+            limit = 300 * 1024 * 1024
+
+        def generate():
+            sent = 0
+            try:
+                for chunk in upstream.iter_content(65536):
+                    sent += len(chunk)
+                    if sent > limit:
+                        break
+                    yield chunk
+            finally:
+                upstream.close()
+
+        return Response(generate(), status=upstream.status_code if upstream.status_code in (200, 206) else 200,
+                        mimetype=content_type, headers=headers)
+
+    @app.route(f'/{admin_prefix}/recordings/<uniqueid>/play')
+    @require_permission('recordings.listen')
+    def recording_play(uniqueid):
+        return recording_proxy(uniqueid, download=False)
+
+    @app.route(f'/{admin_prefix}/recordings/<uniqueid>/download')
+    @require_permission('recordings.download')
+    def recording_download(uniqueid):
+        return recording_proxy(uniqueid, download=True)
+
+    # ---- DND / call forward of the extensions (read-only, from the cached AstDB snapshot) -----------
+    register_dnd_snapshot(app)
+
+    def room_floor(extension):
+        return int(extension[:-2]) if is_room_number(extension) else None
+
+    @app.route(f'/{admin_prefix}/dnd')
+    @require_permission('dnd.view')
+    def dnd_report():
+        snapshot = pbx_snapshot.get(pbx_dnd.SNAPSHOT_NAME)
+        kind = request.args.get('kind', '') if request.args.get('kind') in EXTENSION_KINDS else ''
+        floor = request.args.get('floor', type=int)
+        entries = {e.extension: e for e in Extension.query.filter(Extension.is_deleted == False).all()}  # noqa: E712
+
+        def wanted(ext):
+            entry = entries.get(ext)
+            if kind and (entry is None or entry.kind != kind):
+                return False
+            return floor is None or room_floor(ext) == floor
+
+        dnd, forwards = pbx_dnd.flagged(snapshot)
+        floors = sorted({room_floor(ext) for ext in entries if room_floor(ext) is not None})
+        return render_template('dnd.html', snapshot=snapshot, configured=pbx_connectors.load_settings().ami.ready,
+                               dnd=[(ext, entries.get(ext)) for ext in dnd if wanted(ext)],
+                               forwards=[(ext, entries.get(ext), fwd, entries.get(fwd['to'])) for ext, fwd in forwards if wanted(ext)],
+                               kind=kind, floor=floor, floors=floors, room_floor=room_floor)
+
+    @app.route(f'/{admin_prefix}/dnd/refresh', methods=['POST'])
+    @require_permission('dnd.view')
+    def dnd_refresh():
+        if not pbx_connectors.load_settings().ami.ready:
+            flash('اتصال AMI به ایزابل تنظیم نشده است.', 'warning')
+        else:
+            snapshot = pbx_snapshot.refresh(pbx_dnd.SNAPSHOT_NAME, force=True)  # at most once per 30 s, whoever clicks
+            if snapshot.error is not None and snapshot.state != 'ok':
+                flash(snapshot.error.fa, 'danger')
+        return redirect(url_for('dnd_report', **request.args))
+
+    # ---- Directory vs. Issabel extensions (report; adding only to our directory, never to the PBX) ----
+    register_directory_snapshot()
+
+    def directory_comparison():
+        snapshot = pbx_snapshot.get(pbx_directory_sync.SNAPSHOT_NAME)
+        if snapshot.state == 'unknown' or not snapshot.data:
+            return snapshot, None
+        book = [{'extension': e.extension, 'title': e.title, 'person_name': e.person_name, 'kind': e.kind,
+                 'is_deleted': e.is_deleted, 'is_active': e.is_active} for e in Extension.query.all()]
+        return snapshot, pbx_directory_sync.compare(snapshot.data['extensions'], book, suggest_kind)
+
+    @app.route(f'/{admin_prefix}/pbx-directory')
+    @require_permission('pbxsync.view')
+    def pbx_directory():
+        snapshot, result = directory_comparison()
+        settings = pbx_connectors.load_settings()
+        return render_template('pbx_directory.html', snapshot=snapshot, result=result,
+                               counts=pbx_directory_sync.counts(result) if result else None,
+                               configured=settings.cdr.ready or settings.ami.ready, auto_create=pbx_config()['auto_create'])
+
+    @app.route(f'/{admin_prefix}/pbx-directory/refresh', methods=['POST'])
+    @require_permission('pbxsync.view')
+    def pbx_directory_refresh():
+        if pbx_directory_sync.SNAPSHOT_NAME not in pbx_snapshot.names():
+            flash('اتصال به ایزابل (MySQL یا AMI) تنظیم نشده است.', 'warning')
+            return redirect(url_for('pbx_directory'))
+        before = pbx_snapshot.get(pbx_directory_sync.SNAPSHOT_NAME).updated_at
+        snapshot = pbx_snapshot.refresh(pbx_directory_sync.SNAPSHOT_NAME, force=True)
+        if snapshot.error is not None and snapshot.state != 'ok':
+            flash(snapshot.error.fa, 'danger')
+        elif snapshot.updated_at != before:  # really read now (not skipped by the 30 s floor)
+            _snapshot, result = directory_comparison()
+            c = pbx_directory_sync.counts(result)
+            log_activity('compared', 'pbxsync', 'مقایسه‌ی دفترچه با ایزابل',
+                         details=f"نیست در دفترچه: {c['missing_in_book']}، نیست در ایزابل: {c['missing_in_pbx']}، "
+                                 f"نام متفاوت: {c['name_mismatch']}، نوع متفاوت: {c['kind_mismatch']}")
+            db.session.commit()
+        return redirect(url_for('pbx_directory'))
+
+    @app.route(f'/{admin_prefix}/pbx-directory/add', methods=['POST'])
+    @require_permission('extensions.create')
+    def pbx_directory_add():
+        if not user_can(current_user, 'pbxsync.view'):
+            return forbidden_response()
+        snapshot, result = directory_comparison()
+        if result is None:
+            flash('فهرست ایزابل در دسترس نیست؛ اول «به‌روزرسانی از ایزابل» را بزنید.', 'warning')
+            return redirect(url_for('pbx_directory'))
+        addable = {item['extension']: item for item in result['missing_in_book']}  # re-checked now, not trusted from the form
+        added, skipped = [], 0
+        for ext in dict.fromkeys(request.form.getlist('ext')):
+            item = addable.get(ext)
+            if item is None:
+                skipped += 1
+                continue
+            kind = request.form.get(f'kind_{ext}', item['suggested_kind'])
+            kind = kind if kind in ('room', 'staff') else item['suggested_kind']
+            title = pbx_directory_sync.default_title(ext, item['name'], kind)
+            db.session.add(Extension(extension=ext, title=title, kind=kind, is_active=True))
+            log_activity('created', 'extension', f'{ext} - {title}', details='افزوده‌شده از مقایسه با ایزابل (فقط در دفترچه)')
+            added.append(ext)
+        if added:
+            bump_data_version()
+            db.session.commit()
+            flash(f'{len(added)} داخلی به دفترچه اضافه شد.', 'success')
+        if skipped:
+            flash(f'{skipped} مورد اضافه نشد (در دفترچه یا سطل بازیافت هست، یا دیگر در ایزابل نیست).', 'warning')
+        if not added and not skipped:
+            flash('هیچ داخلی‌ای انتخاب نشده بود.', 'warning')
+        return redirect(url_for('pbx_directory'))
+
+    # ---- Day / night mode (Call Flow Control): view, and a guarded switch -----------------------------
+    register_daynight_snapshot()
+    DAYNIGHT_LABEL = re.compile(r'^C(\d) ')
+
+    def daynight_label(index, name):
+        return f'C{index} — {name}'[:200]
+
+    def last_daynight_changes():
+        """{index: ActivityLog} of the newest switch (or failed switch) per Call Flow."""
+        latest = {}
+        for log in ActivityLog.query.filter_by(entity_type='daynight').order_by(ActivityLog.created_at.desc()).limit(200):
+            found = DAYNIGHT_LABEL.match(log.entity_label or '')
+            if found and int(found.group(1)) not in latest:
+                latest[int(found.group(1))] = log
+        return latest
+
+    def daynight_item(index):
+        snapshot = pbx_snapshot.get(pbx_daynight.SNAPSHOT_NAME)
+        for item in (snapshot.data or {}).get('items', []) if snapshot.state != 'unknown' else []:
+            if item['index'] == index:
+                return snapshot, item
+        return snapshot, None
+
+    @app.route(f'/{admin_prefix}/daynight')
+    @require_permission('daynight.view')
+    def daynight_page():
+        snapshot = pbx_snapshot.get(pbx_daynight.SNAPSHOT_NAME)
+        return render_template('daynight.html', snapshot=snapshot, data=snapshot.data if snapshot.state != 'unknown' else None,
+                               configured=pbx_daynight.SNAPSHOT_NAME in pbx_snapshot.names(), cfg=daynight_config(),
+                               changes=last_daynight_changes(), state_labels=pbx_daynight.STATE_LABELS,
+                               write_ready=pbx_connectors.load_settings().ami_write.ready)
+
+    @app.route(f'/{admin_prefix}/daynight/refresh', methods=['POST'])
+    @require_permission('daynight.view')
+    def daynight_refresh():
+        if pbx_daynight.SNAPSHOT_NAME not in pbx_snapshot.names():
+            flash('اتصال AMI به ایزابل تنظیم نشده است.', 'warning')
+        else:
+            snapshot = pbx_snapshot.refresh(pbx_daynight.SNAPSHOT_NAME, force=True)
+            if snapshot.error is not None and snapshot.state != 'ok':
+                flash(snapshot.error.fa, 'danger')
+        return redirect(url_for('daynight_page'))
+
+    def switch_refusal(index, cfg):
+        """Persian reason why this Call Flow may not be switched now, or None."""
+        if not cfg['write_enabled']:
+            return 'تعویض روز/شب در تنظیمات خاموش است (PBX_DAYNIGHT_WRITE_ENABLED).'
+        if not pbx_connectors.load_settings().ami_write.ready:
+            return 'کاربر نوشتن AMI (PBX_AMI_WRITE_USER) تنظیم نشده است.'
+        if not pbx_daynight.valid_index(index) or index not in cfg['allowed']:
+            return 'این مورد در فهرست مجاز تعویض (PBX_DAYNIGHT_ALLOWED) نیست.'
+        return None
+
+    @app.route(f'/{admin_prefix}/daynight/<int:index>/confirm')
+    @require_permission('daynight.toggle')
+    def daynight_confirm(index):
+        cfg = daynight_config()
+        refusal = switch_refusal(index, cfg)
+        snapshot, item = daynight_item(index)
+        if refusal is None and item is None:
+            refusal = 'وضعیت فعلی این مورد معلوم نیست؛ اول «به‌روزرسانی از ایزابل» را بزنید.'
+        if refusal:
+            flash(refusal, 'warning')
+            return redirect(url_for('daynight_page'))
+        target = 'DAY' if item['state'] == 'NIGHT' else 'NIGHT'
+        return render_template('daynight_confirm.html', item=item, target=target, snapshot=snapshot,
+                               state_labels=pbx_daynight.STATE_LABELS, devstate=cfg['devstate'])
+
+    @app.route(f'/{admin_prefix}/daynight/<int:index>/switch', methods=['POST'])
+    @require_permission('daynight.toggle')
+    def daynight_switch(index):
+        cfg = daynight_config()
+        back = redirect(url_for('daynight_page'))
+        refusal = switch_refusal(index, cfg)
+        if refusal:
+            flash(refusal, 'warning')
+            return back
+        expected, target = request.form.get('expected', ''), request.form.get('target', '')
+        _snapshot, item = daynight_item(index)
+        label = daynight_label(index, item['name'] if item else f'Call Flow {index}')
+        if not daynight_lock.acquire(blocking=False):
+            flash('یک تعویض دیگر همین الان در حال انجام است؛ چند ثانیه بعد صفحه را دوباره ببینید.', 'warning')
+            return back
+        settings, notes = pbx_connectors.load_settings(), []
+        try:
+            def read_state(i):
+                try:
+                    with pbx_connectors.AmiReader(settings) as reader:
+                        return pbx_daynight.state_of(reader.db_get('DAYNIGHT', f'C{i}'))
+                except pbx_connectors.ConnectorError as exc:
+                    raise pbx_daynight.SwitchError(exc.fa, str(exc)) from exc
+
+            def write(i, state):
+                try:
+                    pbx_connectors.AmiWriter(settings).run(pbx_daynight.write_actions(i, state, cfg['method'], cfg['devstate']))
+                except pbx_connectors.ConnectorError as exc:
+                    if getattr(exc, 'completed', 0) >= 1:  # the state itself was written; only the BLF lamp failed
+                        app.logger.warning('Day/night BLF update failed: %s', exc)
+                        notes.append('وضعیت عوض شد ولی چراغ BLF تلفن‌ها به‌روز نشد.')
+                    else:
+                        raise pbx_daynight.SwitchError('نوشتن در ایزابل انجام نشد: ' + exc.fa, str(exc)) from exc
+
+            try:
+                pbx_daynight.switch(read_state, write, index, expected, target)
+            except pbx_daynight.SwitchError as exc:
+                app.logger.warning('Day/night switch of C%s failed: %s', index, exc)
+                log_activity('switch_failed', 'daynight', label,
+                             details=f"{pbx_daynight.STATE_LABELS.get(expected, '?')} → {pbx_daynight.STATE_LABELS.get(target, '?')}: "
+                                     f"{'نوشته شد ولی تأیید نشد' if exc.written else 'انجام نشد'}")
+                db.session.commit()
+                flash(exc.fa, 'danger')
+            else:
+                log_activity('switched', 'daynight', label,
+                             details=f"{pbx_daynight.STATE_LABELS[expected]} → {pbx_daynight.STATE_LABELS[target]} (تأییدشده با خواندن دوباره)"
+                                     + (' — بدون BLF' if notes else ''))
+                db.session.commit()
+                flash(f"«{item['name'] if item else label}» به حالت «{pbx_daynight.STATE_LABELS[target]}» رفت و با خواندن دوباره تأیید شد.", 'success')
+                for note in notes:
+                    flash(note, 'warning')
+        finally:
+            daynight_lock.release()
+        pbx_snapshot.refresh(pbx_daynight.SNAPSHOT_NAME, immediate=True)  # the page shows the state just read back
+        return back
+
+    # ---- Issabel server health (read-only; alerts go to the same bell as phone outages) --------------
+    register_health_snapshot(app)
+
+    def health_view():
+        snapshot = pbx_snapshot.get(pbx_health.SNAPSHOT_NAME)
+        reading = snapshot.data
+        uptime = None
+        if reading and reading.get('core'):
+            uptime = pbx_health.uptime_seconds(reading['core'].get('startup'), datetime.now(LOCAL_TZ).replace(tzinfo=None))
+        alerts = PbxAlertState.query.filter_by(active=True).order_by(PbxAlertState.since).all()
+        return snapshot, reading, uptime, alerts
+
+    @app.route(f'/{admin_prefix}/pbx-health')
+    @require_permission('pbxhealth.view')
+    def pbx_health_page():
+        snapshot, reading, uptime, alerts = health_view()
+        return render_template('pbx_health.html', snapshot=snapshot, reading=reading, uptime=uptime, alerts=alerts,
+                               configured=health_sources_ready() and pbx_health.SNAPSHOT_NAME in pbx_snapshot.names(),
+                               thresholds=pbx_health.load_thresholds(os.environ), format_duration=outage_monitor.format_duration)
+
+    @app.route(f'/{admin_prefix}/pbx-health/refresh', methods=['POST'])
+    @require_permission('pbxhealth.view')
+    def pbx_health_refresh():
+        if pbx_health.SNAPSHOT_NAME not in pbx_snapshot.names():
+            flash('اتصال به ایزابل (AMI یا وب‌پنل) تنظیم نشده است.', 'warning')
+        else:
+            snapshot = pbx_snapshot.refresh(pbx_health.SNAPSHOT_NAME, force=True)  # at most once per 30 s
+            if snapshot.error is not None and snapshot.state != 'ok':
+                flash(snapshot.error.fa, 'danger')
+        return redirect(url_for('pbx_health_page'))
+
+    def alert_feeds():
+        """Alert endpoints the bell polls for the current user (empty: no bell)."""
+        feeds, cfg = [], pbx_config()
+        if user_can(current_user, 'outages.alerts') and cfg['enabled'] and cfg['alerts_enabled']:
+            feeds.append(url_for('api_outage_alerts'))
+        if user_can(current_user, 'pbxhealth.alerts') and health_alerts_enabled():
+            feeds.append(url_for('api_pbx_health_alerts'))
+        return feeds
+
+    def health_summary():
+        """One line for the admin home card, from the cached reading only."""
+        snapshot, reading, uptime, alerts = health_view()
+        return {'state': snapshot.state, 'reading': reading, 'alerts': len(alerts), 'updated_at': snapshot.updated_at}
+
+    app.jinja_env.globals['alert_feeds'] = alert_feeds
+    app.jinja_env.globals['health_summary'] = health_summary
 
     features.check_menu_endpoints(app.view_functions)
 
@@ -3049,6 +3825,30 @@ def seed_roles():
     db.session.commit()
 
 
+def apply_migrated_defaults():
+    """Give each key of features.MIGRATED_DEFAULTS to its built-in roles once (see features.py).
+    Returns the keys that were really added to a role in this run (a new install records them silently)."""
+    done = {row.permission_key for row in RoleDefaultGrant.query.all()}
+    recorded, granted = False, []
+    for key in features.MIGRATED_DEFAULTS:
+        if key in done:
+            continue
+        for role_key in features.default_roles_for(key):
+            role = Role.query.filter_by(key=role_key).first()
+            if role is None or any(p.permission_key == key for p in role.permissions):
+                continue
+            role.permissions.append(RolePermission(permission_key=key))
+            db.session.add(ActivityLog(actor='system', action='updated', entity_type='role', entity_label=role.name,
+                                       details=f'دسترسی پیش‌فرض تازه: {key}'))
+            granted.append(key)
+        db.session.add(RoleDefaultGrant(permission_key=key))
+        recorded = True
+    if recorded:
+        db.session.commit()
+        clear_permission_cache()
+    return list(dict.fromkeys(granted))
+
+
 def migrate_users_to_roles():
     """Before RBAC every account had full access, so every existing account becomes Super Admin.
     Runs only while no user has a role yet: an account that ends up without a role later is never promoted."""
@@ -3081,4 +3881,4 @@ if __name__ == '__main__':
     # This built-in server is for local development only. In production,
     # run behind a real WSGI server instead — see DEPLOYMENT.md.
     debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
-    create_app().run(debug=debug_mode, host='127.0.0.1', port=5000)
+    create_app().run(debug=debug_mode, host='127.0.0.1', port=5000)

@@ -187,9 +187,12 @@ class BellTests(AlertCase):
 
     def test_bell_is_only_for_signed_in_admins_when_alerts_are_on(self):
         self.assertIn('id="alertToggle"', self.admin.get(self.url('')).get_data(as_text=True))
-        self.assertIn('data-alerts-url="/api/outages/alerts"', self.admin.get(self.url('')).get_data(as_text=True))
+        # one bell, two feeds: phone outages and (stage 5) the Issabel health checks
+        self.assertIn('data-alerts-url="/api/outages/alerts /api/pbx/health-alerts"', self.admin.get(self.url('')).get_data(as_text=True))
         self.assertNotIn('alertToggle', self.anon.get('/').get_data(as_text=True))
         with mock.patch.dict(os.environ, {'PBX_ALERTS_ENABLED': '0'}):
+            self.assertIn('data-alerts-url="/api/pbx/health-alerts"', self.admin.get(self.url('')).get_data(as_text=True))
+        with mock.patch.dict(os.environ, {'PBX_ALERTS_ENABLED': '0', 'PBX_HEALTH_ALERTS': '0'}):
             self.assertNotIn('alertToggle', self.admin.get(self.url('')).get_data(as_text=True))
 
     def test_no_bell_without_a_pbx_link(self):

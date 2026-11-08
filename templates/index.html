@@ -277,6 +277,11 @@
     <div class="detail-row"><span>{{ t('وضعیت تلفن') }}</span><strong data-field="phonestatus"></strong></div>
     <div class="detail-row"><span>{{ t('آخرین بررسی') }}</span><strong data-field="phonecheck"></strong></div>
     {% endif %}
+    {% if can('dnd.view') %}
+    <div class="detail-row"><span>DND</span><strong data-field="dnd"></strong></div>
+    <div class="detail-row"><span>{{ t('انتقال تماس') }}</span><strong data-field="forward"></strong></div>
+    <div class="detail-row"><span>{{ t('آخرین خواندن DND') }}</span><strong data-field="dndcheck"></strong></div>
+    {% endif %}
     <div class="detail-row"><span>{{ t('توضیحات') }}</span><strong data-field="notes"></strong></div>
     <div class="detail-row"><span>{{ t('تاریخ ایجاد') }}</span><strong data-field="created"></strong></div>
     <div class="detail-row"><span>{{ t('تاریخ ویرایش') }}</span><strong data-field="updated"></strong></div>

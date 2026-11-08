@@ -18,7 +18,7 @@ from collections import namedtuple
 KEY_PATTERN = re.compile(r'^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$')
 
 # Display order of the groups in the admin menu and in the permission form.
-GROUPS = ('دفترچه', 'پایش', 'سیستم')
+GROUPS = ('دفترچه', 'پایش', 'مرکز تلفن', 'سیستم')
 
 Feature = namedtuple('Feature', 'key label group description dangerous menu_item')
 # endpoint: Flask endpoint the menu links to; nav: the `nav` value the page template sets (active item);
@@ -82,7 +82,7 @@ def check_menu_endpoints(endpoints):
 
 # ---- Features ------------------------------------------------------------------------------------
 
-BOOK, MONITOR, SYSTEM = GROUPS
+BOOK, MONITOR, PHONE, SYSTEM = GROUPS
 
 register_feature('extensions.view', 'مشاهده‌ی لیست داخلی‌ها', BOOK, 'پنل مدیریت داخلی‌ها، اتاق‌ها و اطلاعات تماس',
                  menu_item=MenuItem('admin', 'list', 'extensions', 'لیست داخلی‌ها', 10))
@@ -104,6 +104,24 @@ register_feature('outages.view', 'مشاهده‌ی گزارش قطعی‌ها',
                  menu_item=MenuItem('outages_report', 'activity', 'outages', 'گزارش قطعی‌ها', 20))
 register_feature('outages.export', 'خروجی CSV قطعی‌ها', MONITOR)
 register_feature('outages.alerts', 'هشدار قطعی در مرورگر', MONITOR, 'زنگوله‌ی هشدار قطعی تلفن‌ها')
+register_feature('dnd.view', 'مشاهده‌ی DND و Forward داخلی‌ها', MONITOR, 'اتاق‌های «مزاحم نشوید» و داخلی‌های دارای انتقال تماس، همراه با مقصد',
+                 menu_item=MenuItem('dnd_report', 'bell', 'dnd', 'DND و Forward', 30))
+register_feature('pbxsync.view', 'مقایسه‌ی دفترچه با ایزابل', MONITOR, 'داخلی‌هایی که فقط در ایزابل یا فقط در دفترچه هستند، و ناهمخوانی نام و نوع',
+                 menu_item=MenuItem('pbx_directory', 'list', 'pbxsync', 'مقایسه با ایزابل', 40))
+register_feature('pbxhealth.view', 'مشاهده‌ی سلامت سرور ایزابل', MONITOR, 'CPU، حافظه، دیسک، سرویس Asterisk، ترانک‌ها و تماس‌های جاری',
+                 menu_item=MenuItem('pbx_health_page', 'activity', 'pbxhealth', 'سلامت ایزابل', 15))
+register_feature('pbxhealth.alerts', 'هشدار سلامت ایزابل در مرورگر', MONITOR, 'دیسک پر، CPU بالا، توقف Asterisk و ترانک رجیسترنشده، در همان زنگوله')
+
+register_feature('calls.view', 'مشاهده‌ی گزارش تماس‌ها', PHONE, 'گزارش و آمار تماس‌ها از CDR ایزابل، همراه با شماره‌های تماس',
+                 menu_item=MenuItem('calls_report', 'phone', 'calls', 'گزارش تماس‌ها', 10))
+register_feature('calls.export', 'خروجی CSV تماس‌ها', PHONE, 'فایل تماس‌ها با شماره‌ها؛ هر خروجی در لاگ فعالیت‌ها ثبت می‌شود')
+register_feature('recordings.view', 'مشاهده‌ی فهرست ضبط مکالمات', PHONE, 'فهرست تماس‌های ضبط‌شده در ایزابل (بدون پخش)',
+                 menu_item=MenuItem('recordings_list', 'clock', 'recordings', 'ضبط مکالمات', 20))
+register_feature('recordings.listen', 'شنیدن ضبط مکالمات', PHONE, 'پخش در مرورگر؛ هر پخش با نام، زمان و IP ثبت می‌شود', dangerous=True)
+register_feature('recordings.download', 'دانلود ضبط مکالمات', PHONE, 'دانلود فایل صوتی؛ با سقف تعداد در ساعت و ثبت در لاگ', dangerous=True)
+register_feature('daynight.view', 'مشاهده‌ی حالت روز/شب', PHONE, 'وضعیت فعلی هر Call Flow و مقصد تماس‌ها در حالت روز و شب',
+                 menu_item=MenuItem('daynight_page', 'sun', 'daynight', 'حالت روز/شب', 30))
+register_feature('daynight.toggle', 'تعویض حالت روز/شب', PHONE, 'مسیر تماس‌های ورودی را عوض می‌کند؛ فقط موارد مجاز، با تأیید و ثبت در لاگ', dangerous=True)
 
 register_feature('trash.view', 'مشاهده‌ی سطل بازیافت', SYSTEM,
                  menu_item=MenuItem('trash', 'trash', 'trash', 'سطل بازیافت', 10))
@@ -129,7 +147,7 @@ SYSTEM_ROLES = (
     ('operator', 'اپراتور', 'کار روزمره: ویرایش داخلی‌ها، بخش‌ها و پایش PBX؛ بدون عملیات حساس و بدون لاگ‌ها.', (
         'extensions.view', 'extensions.edit', 'extensions.delete', 'extensions.export', 'departments.manage',
         'pbx.view', 'pbx.sync', 'pbx.review', 'outages.view', 'outages.export', 'outages.alerts',
-        'trash.view', 'trash.restore',
+        'trash.view', 'trash.restore', 'calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view',
     )),
     ('viewer', 'مشاهده‌گر', 'فقط مشاهده‌ی داخلی‌ها، وضعیت PBX و قطعی‌ها.', (
         'extensions.view', 'pbx.view', 'outages.view', 'outages.alerts',
@@ -137,11 +155,25 @@ SYSTEM_ROLES = (
 )
 
 
+# Keys added after the first release. Built-in roles that already exist in a database get them once
+# (as listed in SYSTEM_ROLES above), recorded in role_default_grant, so a key an admin later removes
+# from a role is never added back. New installs get them from SYSTEM_ROLES directly.
+MIGRATED_DEFAULTS = ('calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view')
+
+
+def default_roles_for(key):
+    """Built-in roles (other than Super Admin) whose default list contains key."""
+    return tuple(role for role, _n, _d, permissions in SYSTEM_ROLES if permissions and key in permissions)
+
+
 def _check_system_roles():
     for key, _name, _description, permissions in SYSTEM_ROLES:
         unknown = [p for p in permissions or () if p not in FEATURES]
         if unknown:
             raise ValueError(f'System role {key!r} lists unknown permissions: {", ".join(unknown)}')
+    unknown = [k for k in MIGRATED_DEFAULTS if k not in FEATURES]
+    if unknown:
+        raise ValueError(f'MIGRATED_DEFAULTS lists unknown permissions: {", ".join(unknown)}')
 
 
 _check_system_roles()

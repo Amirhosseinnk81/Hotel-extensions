@@ -46,6 +46,27 @@
   </div>
   {% endif %}
 
+  {% if can('pbxhealth.view') %}
+  {% set health = health_summary() %}
+  <div class="action-card">
+    <div class="action-card-head"><span class="action-icon">⚙</span><h6>{{ t('سلامت سرور ایزابل') }}</h6></div>
+    <p class="action-desc">
+      {% if health.reading %}
+        {% set d = health.reading.dashboard %}
+        {% if d and d.cpu is not none %}CPU <bdi dir="ltr">{{ '%g%%' % d.cpu }}</bdi> · {% endif %}
+        {% if d and d.disks %}{{ t('دیسک') }} <bdi dir="ltr">{{ '%g%%' % (d.disks | map(attribute='percent') | max) }}</bdi> · {% endif %}
+        Asterisk: {{ t('در حال اجرا') if health.reading.asterisk == 'running' else t('متوقف') if health.reading.asterisk == 'stopped' else t('نامشخص') }}
+        {% if health.reading.ami_ok %} · {{ t('ترانک‌های رجیسترنشده:') }} {{ health.reading.trunks | rejectattr('registered') | list | length }}{% endif %}
+        {% if health.alerts %}<br><strong class="text-danger">{{ health.alerts }} {{ t('هشدار فعال') }}</strong>{% endif %}
+        {% if health.state != 'ok' %}<br><small class="text-muted">{{ t('داده‌ی قدیمی یا ناقص؛ جزئیات در صفحه‌ی سلامت.') }}</small>{% endif %}
+      {% else %}
+        {{ t('هنوز از ایزابل خوانده نشده است.') }}
+      {% endif %}
+    </p>
+    <a href="{{ url_for('pbx_health_page') }}" class="btn btn-outline-primary btn-sm">{{ t('باز کردن صفحه‌ی سلامت') }}</a>
+  </div>
+  {% endif %}
+
   {% if can('extensions.mac_import') %}
   <div class="action-card">
     <div class="action-card-head"><span class="action-icon">⌗</span><h6>{{ t('ایمپورت MAC تلفن‌ها') }}</h6></div>

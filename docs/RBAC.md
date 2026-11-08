@@ -55,6 +55,17 @@
 | `outages.view` | ✓ | ✓ | ✓ |
 | `outages.export` | ✓ | ✓ |  |
 | `outages.alerts` | ✓ | ✓ | ✓ |
+| `dnd.view` | ✓ | ✓ |  |
+| `pbxsync.view` | ✓ | ✓ |  |
+| `pbxhealth.view` | ✓ | ✓ |  |
+| `pbxhealth.alerts` | ✓ | ✓ |  |
+| `calls.view` | ✓ | ✓ |  |
+| `calls.export` | ✓ |  |  |
+| `recordings.view` | ✓ |  |  |
+| `recordings.listen` ⚠ | ✓ |  |  |
+| `recordings.download` ⚠ | ✓ |  |  |
+| `daynight.view` | ✓ | ✓ |  |
+| `daynight.toggle` ⚠ | ✓ |  |  |
 | `trash.view` | ✓ | ✓ |  |
 | `trash.restore` | ✓ | ✓ |  |
 | `trash.purge` ⚠ | ✓ |  |  |
@@ -66,6 +77,8 @@
 <!-- role-matrix:end -->
 
 تست `tests/test_rbac_docs.py` بررسی می‌کند این جدول با `features.py` یکی باشد؛ اگر کلید یا نقش پیش‌فرض را عوض کردید، این جدول را هم به‌روز کنید.
+
+**کلیدهایی که بعد از اولین نسخه اضافه شده‌اند** (`MIGRATED_DEFAULTS` در `features.py`، فعلاً `calls.view`، `dnd.view`، `pbxsync.view`، `pbxhealth.view`، `pbxhealth.alerts` و `daynight.view`): در دیتابیسی که نقش‌های پیش‌فرض از قبل دارد، هر کلید **فقط یک بار** به نقش‌هایی که در جدول بالا تیک دارند اضافه می‌شود و در لاگ فعالیت‌ها با کاربر `system` ثبت می‌شود. اجرای انجام‌شده در جدول `role_default_grant` نگه داشته می‌شود؛ پس اگر مدیر بعداً آن کلید را از نقشی برداشت، با ری‌استارت دوباره اضافه نمی‌شود. کلید تازه‌ای که می‌خواهید به نقش‌های موجود هم برسد را به همین فهرست اضافه کنید.
 
 همهٔ کاربرانی که قبل از RBAC وجود داشتند هنگام مهاجرت **مدیر ارشد** شدند (چون قبلاً هم به همه‌چیز دسترسی داشتند). بعد از تحویل، در صفحهٔ کاربران نقش واقعی هر نفر را تنظیم کنید.
 
@@ -81,7 +94,7 @@ register_feature('voicemail.view', 'مشاهده‌ی صندوق صوتی', MONI
 register_feature('voicemail.delete', 'حذف پیام صوتی', MONITOR, dangerous=True)
 ```
 
-- `group` یکی از `GROUPS` است (`دفترچه`، `پایش`، `سیستم`)؛ گروه تازه را اول به `GROUPS` اضافه کنید.
+- `group` یکی از `GROUPS` است (`دفترچه`، `پایش`، `مرکز تلفن`، `سیستم`)؛ گروه تازه را اول به `GROUPS` اضافه کنید.
 - `menu_item` اختیاری است: `MenuItem(endpoint, icon, nav, label, order)`. `icon` از `templates/_icons.html` و `nav` همان مقداری است که صفحه در `{% set nav = '...' %}` می‌گذارد.
 - اشتباه (کلید تکراری، فرمت غلط، گروه ناشناخته، منو به endpoint ناموجود) باعث می‌شود برنامه **اصلاً بالا نیاید** و پیام خطای واضح بدهد.
 

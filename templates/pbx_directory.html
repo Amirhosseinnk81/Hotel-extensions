@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'pbxsync' %}
+{% block title %}Directory vs Issabel{% endblock %}
+{% block content %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h1 class="h2 mb-1">{{ t('مقایسه‌ی دفترچه با ایزابل') }}</h1>
+    <p class="text-muted mb-0">{{ t('فقط گزارش و پیشنهاد. در ایزابل هیچ چیزی ساخته، تغییر داده یا حذف نمی‌شود؛ افزودن فقط به دفترچه‌ی همین برنامه است.') }}</p>
+  </div>
+  {% if configured %}
+  <form method="post" action="{{ url_for('pbx_directory_refresh') }}" class="no-print">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <button class="btn btn-outline-secondary btn-sm">{{ t('به‌روزرسانی از ایزابل') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال MySQL فقط‌خواندنی (با نام داخلی‌ها) یا AMI (فقط شماره‌ها) لازم است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% else %}
+  <div class="alert {{ 'alert-light' if snapshot.state == 'ok' else 'alert-warning' }} py-2">
+    {% if snapshot.updated_at %}
+      {{ t('آخرین خواندن از ایزابل:') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>
+      · {{ t('منبع:') }} {{ t('MySQL (با نام داخلی‌ها)') if snapshot.data and snapshot.data.source == 'mysql' else t('AMI (فقط شماره‌ها، بدون مقایسه‌ی نام)') }}
+    {% else %}
+      {{ t('هنوز از ایزابل خوانده نشده است.') }}
+    {% endif %}
+    {% if snapshot.state == 'stale' %} — {{ t('آخرین تلاش ناموفق بود؛ داده‌ی قبلی نمایش داده می‌شود.') }}{% endif %}
+    {% if snapshot.error %}<div class="small mt-1">{{ snapshot.error.fa }}</div>{% endif %}
+  </div>
+  {% if not auto_create %}
+    <div class="alert alert-info py-2">{{ t('ساخت خودکار داخلی‌های تازه خاموش است (PBX_AUTO_CREATE=0)؛ داخلی‌های تازه‌ی ایزابل فقط این‌جا فهرست می‌شوند.') }}</div>
+  {% endif %}
+{% endif %}
+
+{% if result %}
+<div class="outage-stats mb-3">
+  {% for key, label in (('missing_in_book', 'در ایزابل هست، در دفترچه نیست'), ('missing_in_pbx', 'در دفترچه هست، در ایزابل نیست'),
+                        ('name_mismatch', 'نام متفاوت'), ('kind_mismatch', 'نوع متفاوت')) %}
+    <a class="outage-stat text-decoration-none {{ 'is-hot' if counts[key] }}" href="#{{ key }}">
+      <span class="outage-stat-label">{{ t(label) }}</span>
+      <strong class="outage-stat-value">{{ counts[key] }}</strong>
+    </a>
+  {% endfor %}
+</div>
+
+<section class="panel p-0 overflow-hidden mb-3" id="missing_in_book">
+  <h2 class="h6 p-3 mb-0">{{ t('در ایزابل هست، در دفترچه نیست') }}</h2>
+  {% if result.missing_in_book %}
+  <form method="post" action="{{ url_for('pbx_directory_add') }}" data-confirm="{{ t('داخلی‌های انتخاب‌شده فقط به دفترچه‌ی همین برنامه اضافه شوند؟ در ایزابل چیزی تغییر نمی‌کند.') }}">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <table class="table table-hover align-middle compact-table mb-0">
+      <thead><tr><th></th><th>{{ t('داخلی') }}</th><th>{{ t('نام در ایزابل') }}</th><th>{{ t('درایور') }}</th><th>{{ t('نوع در دفترچه') }}</th></tr></thead>
+      <tbody>
+        {% for item in result.missing_in_book %}
+        <tr>
+          <td>{% if can('extensions.create') %}<input type="checkbox" name="ext" value="{{ item.extension }}" aria-label="{{ t('انتخاب') }} {{ item.extension }}">{% endif %}</td>
+          <td class="fw-bold" dir="ltr">{{ item.extension }}</td>
+          <td>{{ item.name or '—' }}</td>
+          <td dir="ltr">{{ item.tech or '—' }}</td>
+          <td>
+            {% if can('extensions.create') %}
+            <select name="kind_{{ item.extension }}" class="form-select form-select-sm">
+              {% for k in ('room', 'staff') %}<option value="{{ k }}" {% if item.suggested_kind == k %}selected{% endif %}>{{ kind_labels[k] }}</option>{% endfor %}
+            </select>
+            {% else %}{{ kind_labels[item.suggested_kind] }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if can('extensions.create') %}
+      <div class="p-3"><button class="btn btn-primary btn-sm">{{ t('افزودن انتخاب‌شده‌ها به دفترچه') }}</button></div>
+    {% endif %}
+  </form>
+  {% else %}
+    <p class="text-muted p-3 mb-0">{{ t('موردی نیست.') }}</p>
+  {% endif %}
+</section>
+
+{% if result.in_trash %}
+<section class="panel p-0 overflow-hidden mb-3">
+  <h2 class="h6 p-3 mb-0">{{ t('در ایزابل هست ولی در سطل بازیافت دفترچه است') }}</h2>
+  <p class="text-muted small px-3 mb-2">{{ t('این‌ها را به‌جای افزودن دوباره، از سطل بازیافت برگردانید.') }}{% if can('trash.view') %} <a href="{{ url_for('trash') }}">{{ t('سطل بازیافت') }}</a>{% endif %}</p>
+  <table class="table compact-table mb-0">
+    <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('نام در ایزابل') }}</th><th>{{ t('عنوان در دفترچه') }}</th></tr></thead>
+    <tbody>{% for item in result.in_trash %}<tr><td class="fw-bold" dir="ltr">{{ item.extension }}</td><td>{{ item.name or '—' }}</td><td>{{ item.title }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel p-0 overflow-hidden mb-3" id="missing_in_pbx">
+  <h2 class="h6 p-3 mb-0">{{ t('در دفترچه هست، در ایزابل نیست') }}</h2>
+  {% if result.missing_in_pbx %}
+  <table class="table compact-table mb-0">
+    <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان در دفترچه') }}</th><th>{{ t('نوع در دفترچه') }}</th><th>{{ t('وضعیت') }}</th></tr></thead>
+    <tbody>{% for item in result.missing_in_pbx %}
+      <tr><td class="fw-bold" dir="ltr">{{ item.extension }}</td><td>{{ item.title }}</td><td>{{ kind_labels.get(item.kind, item.kind) }}</td><td>{{ t('فعال') if item.is_active else t('غیرفعال') }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}<p class="text-muted p-3 mb-0">{{ t('موردی نیست.') }}</p>{% endif %}
+</section>
+
+<section class="panel p-0 overflow-hidden mb-3" id="name_mismatch">
+  <h2 class="h6 p-3 mb-0">{{ t('نام متفاوت') }}</h2>
+  {% if result.name_mismatch %}
+  <table class="table compact-table mb-0">
+    <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('نام در ایزابل') }}</th><th>{{ t('عنوان در دفترچه') }}</th><th>{{ t('نام مسئول') }}</th></tr></thead>
+    <tbody>{% for item in result.name_mismatch %}
+      <tr><td class="fw-bold" dir="ltr">{{ item.extension }}</td><td>{{ item.name }}</td><td>{{ item.title }}</td><td>{{ item.person_name or '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% else %}<p class="text-muted p-3 mb-0">{{ t('موردی نیست.') }}</p>{% endif %}
+</section>
+
+<section class="panel p-0 overflow-hidden mb-3" id="kind_mismatch">
+  <h2 class="h6 p-3 mb-0">{{ t('نوع متفاوت') }} <small class="text-muted">{{ t('(پیشنهاد بر اساس الگوی شماره‌ی اتاق؛ ممکن است عمدی باشد)') }}</small></h2>
+  {% if result.kind_mismatch or result.pending %}
+  <table class="table compact-table mb-0">
+    <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان در دفترچه') }}</th><th>{{ t('نوع در دفترچه') }}</th><th>{{ t('پیشنهاد') }}</th></tr></thead>
+    <tbody>
+      {% for item in result.kind_mismatch %}
+        <tr><td class="fw-bold" dir="ltr">{{ item.extension }}</td><td>{{ item.title }}</td><td>{{ kind_labels[item.kind] }}</td><td>{{ kind_labels[item.suggested_kind] }}</td></tr>
+      {% endfor %}
+      {% for item in result.pending %}
+        <tr><td class="fw-bold" dir="ltr">{{ item.extension }}</td><td>{{ item.title }}</td><td>{{ kind_labels['pending'] }}</td><td>{{ kind_labels[item.suggested_kind] }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if result.pending and can('pbx.review') %}<p class="small px-3 py-2 mb-0"><a href="{{ url_for('pbx_status') }}">{{ t('تعیین نوع داخلی‌های در انتظار در صفحه‌ی PBX') }}</a></p>{% endif %}
+  {% else %}<p class="text-muted p-3 mb-0">{{ t('موردی نیست.') }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

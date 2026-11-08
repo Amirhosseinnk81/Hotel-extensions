@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'dnd' %}
+{% block title %}DND and Forward{% endblock %}
+{% block content %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h1 class="h2 mb-1">{{ t('DND و Forward داخلی‌ها') }}</h1>
+    <p class="text-muted mb-0">{{ t('فقط نمایش؛ روشن یا خاموش کردن DND و انتقال تماس از همین برنامه ممکن نیست.') }}</p>
+  </div>
+  {% if configured %}
+  <form method="post" action="{{ url_for('dnd_refresh', **request.args) }}" class="no-print">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <button class="btn btn-outline-secondary btn-sm">{{ t('به‌روزرسانی از ایزابل') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI به ایزابل لازم است (PBX_AMI_HOST، PBX_AMI_USER، PBX_AMI_SECRET)؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% else %}
+  <div class="alert {{ {'ok': 'alert-light', 'stale': 'alert-warning', 'unknown': 'alert-warning'}[snapshot.state] }} py-2">
+    {% if snapshot.updated_at %}
+      {{ t('آخرین خواندن از ایزابل:') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>
+    {% else %}
+      {{ t('هنوز از ایزابل خوانده نشده است.') }}
+    {% endif %}
+    {% if snapshot.state == 'stale' %} — {{ t('آخرین تلاش ناموفق بود؛ داده‌ی قبلی نمایش داده می‌شود.') }}{% endif %}
+    {% if snapshot.state == 'unknown' %} — {{ t('وضعیت فعلی نامشخص است؛ نبودن در فهرست به معنی خاموش بودن نیست.') }}{% endif %}
+    {% if snapshot.error %}<div class="small mt-1">{{ snapshot.error.fa }}</div>{% endif %}
+  </div>
+{% endif %}
+
+<form class="search-card outage-filters mb-3 no-print" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-lg-3">
+      <label class="form-label" for="d-kind">{{ t('نوع') }}</label>
+      <select id="d-kind" name="kind" class="form-select">
+        <option value="">{{ t('همه') }}</option>
+        {% for key in ('room', 'staff', 'pending') %}<option value="{{ key }}" {% if kind == key %}selected{% endif %}>{{ kind_labels[key] }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-lg-3">
+      <label class="form-label" for="d-floor">{{ t('طبقه') }}</label>
+      <select id="d-floor" name="floor" class="form-select">
+        <option value="">{{ t('همه') }}</option>
+        {% for f in floors %}<option value="{{ f }}" {% if floor == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-lg-2 d-grid"><button class="btn btn-primary">{{ t('نمایش') }}</button></div>
+  </div>
+</form>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="panel p-0 overflow-hidden h-100">
+      <h2 class="h6 p-3 mb-0">{{ t('مزاحم نشوید (DND)') }} <span class="badge text-bg-secondary">{{ dnd|length }}</span></h2>
+      <table class="table table-hover align-middle compact-table mb-0">
+        <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان') }}</th><th>{{ t('طبقه') }}</th></tr></thead>
+        <tbody>
+          {% for ext, entry in dnd %}
+            <tr><td class="fw-bold" dir="ltr">{{ ext }}</td><td>{{ entry.title if entry else '—' }}</td><td>{{ room_floor(ext) or '—' }}</td></tr>
+          {% else %}
+            <tr><td colspan="3" class="text-center py-4 text-muted">{{ t('موردی نیست.') if snapshot and snapshot.state != 'unknown' else t('نامشخص') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="panel p-0 overflow-hidden h-100">
+      <h2 class="h6 p-3 mb-0">{{ t('انتقال تماس (Forward)') }} <span class="badge text-bg-secondary">{{ forwards|length }}</span></h2>
+      <table class="table table-hover align-middle compact-table mb-0">
+        <thead><tr><th>{{ t('داخلی') }}</th><th>{{ t('عنوان') }}</th><th>{{ t('نوع انتقال') }}</th><th>{{ t('مقصد') }}</th></tr></thead>
+        <tbody>
+          {% for ext, entry, fwd, target in forwards %}
+            <tr>
+              <td class="fw-bold" dir="ltr">{{ ext }}</td>
+              <td>{{ entry.title if entry else '—' }}</td>
+              <td>{{ t(fwd.label) }}</td>
+              <td><bdi dir="ltr">{{ fwd.to }}</bdi>{% if target %} <small class="text-muted">({{ target.title }})</small>{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-center py-4 text-muted">{{ t('موردی نیست.') if snapshot and snapshot.state != 'unknown' else t('نامشخص') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

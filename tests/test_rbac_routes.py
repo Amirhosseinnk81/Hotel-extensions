@@ -35,6 +35,13 @@ PERMISSIONS = {
     'users_access_csv': 'users.manage',
     'admin_roles': 'roles.manage', 'new_role': 'roles.manage', 'edit_role': 'roles.manage', 'delete_role': 'roles.manage',
     'activity_log': 'activity_log.view',
+    'calls_report': 'calls.view', 'calls_export': 'calls.export',
+    'daynight_page': 'daynight.view', 'daynight_refresh': 'daynight.view', 'daynight_confirm': 'daynight.toggle',
+    'daynight_switch': 'daynight.toggle',
+    'recordings_list': 'recordings.view', 'recording_play': 'recordings.listen', 'recording_download': 'recordings.download',
+    'dnd_report': 'dnd.view', 'dnd_refresh': 'dnd.view',
+    'pbx_health_page': 'pbxhealth.view', 'pbx_health_refresh': 'pbxhealth.view', 'api_pbx_health_alerts': 'pbxhealth.alerts',
+    'pbx_directory': 'pbxsync.view', 'pbx_directory_refresh': 'pbxsync.view', 'pbx_directory_add': 'extensions.create',
 }
 
 MISSING = 999999  # ids that do not exist: an allowed request ends in 404/redirect, a refused one in 403, nothing changes
@@ -60,6 +67,13 @@ def requests_to_check(a):
         ('POST', f'/{a}/users/{MISSING}/unlock'), ('GET', f'/{a}/users/access.csv'),
         ('GET', f'/{a}/roles'), ('GET', f'/{a}/roles/new'), ('GET', f'/{a}/roles/{MISSING}/edit'), ('POST', f'/{a}/roles/{MISSING}/delete'),
         ('GET', f'/{a}/activity-log'),
+        ('GET', f'/{a}/calls'), ('GET', f'/{a}/calls/export.csv'),
+        ('GET', f'/{a}/daynight'), ('POST', f'/{a}/daynight/refresh'), ('GET', f'/{a}/daynight/0/confirm'),
+        ('POST', f'/{a}/daynight/0/switch'),
+        ('GET', f'/{a}/recordings'), ('GET', f'/{a}/recordings/1.1/play'), ('GET', f'/{a}/recordings/1.1/download'),
+        ('GET', f'/{a}/dnd'), ('POST', f'/{a}/dnd/refresh'),
+        ('GET', f'/{a}/pbx-health'), ('POST', f'/{a}/pbx-health/refresh'), ('GET', '/api/pbx/health-alerts'),
+        ('GET', f'/{a}/pbx-directory'), ('POST', f'/{a}/pbx-directory/refresh'), ('POST', f'/{a}/pbx-directory/add'),
         # destructive last: everything above still sees the extension
         ('POST', f'/{a}/extensions/delete-all'),
     ]

@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'pbxhealth' %}
+{% block title %}Issabel Health{% endblock %}
+{% block content %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h1 class="h2 mb-1">{{ t('سلامت سرور ایزابل') }}</h1>
+    <p class="text-muted mb-0">{{ t('فقط خواندنی: CPU، حافظه و دیسک از داشبورد ایزابل؛ زمان روشن‌بودن، تماس‌های جاری و ترانک‌ها از AMI.') }}</p>
+  </div>
+  {% if configured %}
+  <form method="post" action="{{ url_for('pbx_health_refresh') }}" class="no-print">
+    <input type="hidden" name="csrf_token" value="{{ (csrf_token())|e }}">
+    <button class="btn btn-outline-secondary btn-sm">{{ t('به‌روزرسانی از ایزابل') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not configured %}
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI یا وب‌پنل ایزابل لازم است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+{% else %}
+  <div class="alert {{ 'alert-light' if snapshot.state == 'ok' else 'alert-warning' }} py-2">
+    {% if snapshot.updated_at %}{{ t('آخرین خواندن از ایزابل:') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>{% else %}{{ t('هنوز از ایزابل خوانده نشده است.') }}{% endif %}
+    {% if snapshot.state == 'stale' %} — {{ t('آخرین تلاش ناموفق بود؛ داده‌ی قبلی نمایش داده می‌شود.') }}{% endif %}
+    {% if snapshot.state == 'unknown' and snapshot.updated_at %} — {{ t('داده خیلی قدیمی است؛ وضعیت فعلی نامشخص است.') }}{% endif %}
+    {% if snapshot.error %}<div class="small mt-1">{{ snapshot.error.fa }}</div>{% endif %}
+  </div>
+{% endif %}
+
+{% if alerts %}
+<div class="alert alert-danger">
+  <strong>{{ t('هشدارهای فعال') }}</strong>
+  <ul class="mb-0">
+    {% for a in alerts %}<li><bdi dir="ltr">{{ a.subject }}</bdi>{% if a.detail %} — <bdi dir="ltr">{{ a.detail }}</bdi>{% endif %} <small class="text-muted">({{ t('از') }} <bdi dir="ltr">{{ a.since | local_dt('%Y/%m/%d %H:%M') }}</bdi>)</small></li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if reading %}
+{% set d = reading.dashboard %}
+<div class="outage-stats mb-3">
+  <div class="outage-stat {{ 'is-hot' if reading.asterisk == 'stopped' }}">
+    <span class="outage-stat-label">Asterisk</span>
+    <strong class="outage-stat-value">{{ t('در حال اجرا') if reading.asterisk == 'running' else t('متوقف') if reading.asterisk == 'stopped' else t('نامشخص') }}</strong>
+    <small>{% if uptime is not none %}{{ t('روشن از') }} <bdi dir="ltr">{{ reading.core.startup }}</bdi> ({{ format_duration(uptime) }}){% else %}—{% endif %}</small>
+  </div>
+  <div class="outage-stat">
+    <span class="outage-stat-label">{{ t('تماس‌های جاری') }}</span>
+    <strong class="outage-stat-value">{{ reading.core.current_calls if reading.core else '—' }}</strong>
+    <small>{{ t('از AMI') }}</small>
+  </div>
+  {% for label, value, warn in (('CPU', d.cpu if d else none, thresholds.cpu_warn), (t('حافظه'), d.memory if d else none, 101), ('Swap', d.swap if d else none, 101)) %}
+  <div class="outage-stat {{ 'is-hot' if value is not none and value >= warn }}">
+    <span class="outage-stat-label">{{ label }}</span>
+    <strong class="outage-stat-value"><bdi dir="ltr">{{ '%g%%' % value if value is not none else '—' }}</bdi></strong>
+    {% if value is not none %}<span class="health-bar"><span style="width: {{ value }}%"></span></span>{% else %}<small>{{ t('از داشبورد ایزابل خوانده نشد') }}</small>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="panel p-0 overflow-hidden h-100">
+      <h2 class="h6 p-3 mb-0">{{ t('دیسک') }} <small class="text-muted">{{ t('هشدار از') }} {{ '%g' % thresholds.disk_warn }}%</small></h2>
+      <table class="table compact-table mb-0">
+        <tbody>
+          {% for disk in (d.disks if d else []) %}
+            <tr class="{{ 'table-danger' if disk.percent >= thresholds.disk_warn }}"><td dir="ltr" class="text-start">{{ disk.mount }}</td>
+              <td class="w-50"><span class="health-bar"><span style="width: {{ disk.percent }}%"></span></span></td><td dir="ltr">{{ '%g%%' % disk.percent }}</td></tr>
+          {% else %}
+            <tr><td class="text-muted">{{ reading.web_error.fa if reading.web_error else t('از داشبورد ایزابل خوانده نشد') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel p-0 overflow-hidden h-100">
+      <h2 class="h6 p-3 mb-0">{{ t('سرویس‌ها') }}</h2>
+      <table class="table compact-table mb-0">
+        <tbody>
+          {% for name, state in ((d.services if d else {}) | dictsort) %}
+            <tr><td dir="ltr" class="text-start">{{ name }}</td><td>{{ t('در حال اجرا') if state == 'running' else t('متوقف') }}</td></tr>
+          {% else %}
+            <tr><td class="text-muted">{{ t('وضعیت سرویس‌ها در داشبورد پیدا نشد.') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="panel p-0 overflow-hidden mb-3">
+  <h2 class="h6 p-3 mb-0">{{ t('ترانک‌ها') }} {% if reading.driver %}<small class="text-muted" dir="ltr">({{ reading.driver }})</small>{% endif %}</h2>
+  <table class="table compact-table mb-0">
+    <thead><tr><th>{{ t('ترانک') }}</th><th>{{ t('وضعیت رجیستر') }}</th></tr></thead>
+    <tbody>
+      {% if reading.ami_ok %}
+        {% for trunk in reading.trunks %}
+          <tr class="{{ '' if trunk.registered else 'table-danger' }}"><td dir="ltr" class="text-start">{{ trunk.name }}</td>
+            <td>{{ t('رجیستر است') if trunk.registered else t('رجیستر نیست') }} <small class="text-muted" dir="ltr">{{ trunk.state }}</small></td></tr>
+        {% else %}
+          <tr><td colspan="2" class="text-muted">{{ t('ترانک رجیستری (outbound registration) تعریف نشده است.') }}</td></tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="2" class="text-muted">{{ t('نامشخص') }} — {{ reading.ami_error.fa if reading.ami_error else t('AMI تنظیم نشده است.') }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+<p class="text-muted small">{{ t('هشدار دیسک و CPU با فاصله‌ی برگشت (hysteresis) است: هشدار دیسک از') }} {{ '%g' % thresholds.disk_warn }}% {{ t('و پایان آن زیر') }} {{ '%g' % thresholds.disk_clear }}%؛ CPU {{ t('از') }} {{ '%g' % thresholds.cpu_warn }}% {{ t('در') }} {{ thresholds.cpu_samples }} {{ t('خواندن پشت‌سرهم و پایان آن زیر') }} {{ '%g' % thresholds.cpu_clear }}%.</p>
+{% endif %}
+{% endblock %}
