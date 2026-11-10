@@ -1,4 +1,6 @@
-# سامانه داخلی‌های هتل
+# Araz Desk — سامانه داخلی‌های هتل آراز
+
+دفترچه‌ی داخلی‌ها، پایش تلفن‌ها و ابزارهای مرکز تلفن ایزابل برای هتل آراز. طراحی و توسعه: [امیرحسین نعیمائی (Amirhossein Naeimaei)](http://amirhosseinnk.ir/).
 
 ## اجرا
 
@@ -104,3 +106,11 @@ python -m unittest discover -s tests -t .
 - Three themes: dark (default), light and gold; the choice is stored per browser.
 - All CSS, fonts and Bootstrap files are served from `static/vendor`, so the pages work without Internet access.
 - Exports (PDF/Excel/CSV) keep their Persian headings.
+
+## لایسنس
+
+این نرم‌افزار **اختصاصی** است؛ همه‌ی حقوق آن برای امیرحسین نعیمائی محفوظ است و استفاده، کپی، تغییر یا انتشار آن بدون اجازه‌ی کتبی مجاز نیست. هتل آراز اجازه‌ی نصب و اجرای آن را برای کار داخلی خودش، در مدت اعتبار کلید لایسنس (یک‌ساله، قابل تمدید) دارد. متن کامل: [`LICENSE`](LICENSE).
+
+بعد از پایان کلید و مهلت آن، دفترچه‌ی عمومی کار می‌کند و پنل مدیریت فقط قابل مشاهده می‌شود. وضعیت در «پنل ← سیستم ← لایسنس» دیده می‌شود؛ راه‌اندازی و صدور کلید: بخش ۱۳ فایل `DEPLOYMENT.md`.
+
+نام نرم‌افزار و نشان دوحرفی هدر با `APP_NAME` و `APP_MARK` در `.env` قابل تغییرند (پیش‌فرض `Araz Desk` و `AD`). نام توسعه‌دهنده در پایین صفحه‌ها طبق همین مجوز باید باقی بماند.

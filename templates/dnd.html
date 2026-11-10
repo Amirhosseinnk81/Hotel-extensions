@@ -17,7 +17,7 @@
 </div>
 
 {% if not configured %}
-  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI به ایزابل لازم است (PBX_AMI_HOST، PBX_AMI_USER، PBX_AMI_SECRET)؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI یا SSH به ایزابل لازم است (PBX_AMI_* یا PBX_SSH_*)؛ راهنما در بخش‌های ۱۱ و ۱۴ فایل DEPLOYMENT.md.') }}</div>
 {% else %}
   <div class="alert {{ {'ok': 'alert-light', 'stale': 'alert-warning', 'unknown': 'alert-warning'}[snapshot.state] }} py-2">
     {% if snapshot.updated_at %}

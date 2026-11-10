@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% set shell = 'admin' %}{% set nav = 'license' %}
+{% block title %}License{% endblock %}
+{% block content %}
+<a href="{{ admin_home() or url_for('index') }}" class="back-link no-print">{{ t('← بازگشت به مدیریت') }}</a>
+<div class="mt-3 mb-4">
+  <h1 class="h2 mb-1">{{ t('لایسنس نرم‌افزار') }}</h1>
+  <p class="text-muted mb-0"><bdi dir="ltr">{{ app_name }}</bdi> — {{ t('طراحی و توسعه:') }} <a href="{{ developer.url }}" target="_blank" rel="noopener noreferrer">{{ developer.en if current_lang() == 'en' else developer.fa }}</a></p>
+</div>
+
+{% if lic.state == 'unmanaged' %}
+  <div class="alert alert-info">{{ t('بررسی لایسنس در این نسخه راه‌اندازی نشده است (حالت آزمایشی)؛ همه‌ی بخش‌ها بدون محدودیت کار می‌کنند.') }}</div>
+{% else %}
+<div class="outage-stats mb-3">
+  <div class="outage-stat {{ 'is-hot' if lic.state in ('readonly', 'grace') }}">
+    <span class="outage-stat-label">{{ t('وضعیت') }}</span>
+    <strong class="outage-stat-value license-state">
+      {% if lic.state == 'valid' %}{{ t('معتبر') }}{% elif lic.state == 'grace' %}{{ t('پایان‌یافته (مهلت)') }}{% else %}{{ t('نامعتبر') }}{% endif %}
+    </strong>
+    <small>
+      {% if lic.state == 'readonly' %}
+        {% if lic.reason == 'expired' %}{{ t('لایسنس به پایان رسیده است.') }}
+        {% elif lic.reason == 'missing' %}{{ t('کلید لایسنس (LICENSE_KEY) در فایل .env نیست.') }}
+        {% else %}{{ t('کلید لایسنس پذیرفته نشد (ناقص، تغییریافته یا برای نرم‌افزار دیگر).') }}{% endif %}
+      {% elif lic.state == 'grace' %}{{ t('پنل تا پایان مهلت کامل کار می‌کند.') }}
+      {% else %}{{ t('همه‌ی بخش‌ها فعال‌اند.') }}{% endif %}
+    </small>
+  </div>
+  {% if lic.expires %}
+  <div class="outage-stat {{ 'is-hot' if lic.expiring }}">
+    <span class="outage-stat-label">{{ t('روزهای باقی‌مانده') }}</span>
+    <strong class="outage-stat-value">{{ lic.days_left if lic.days_left >= 0 else 0 }}</strong>
+    <small>{{ t('تاریخ پایان:') }} <bdi dir="ltr">{{ day(lic.expires) }}</bdi></small>
+  </div>
+  <div class="outage-stat">
+    <span class="outage-stat-label">{{ t('صادرشده برای') }}</span>
+    <strong class="license-customer">{{ lic.customer }}</strong>
+    <small>{{ t('از') }} <bdi dir="ltr">{{ day(lic.issued) }}</bdi> · {{ t('شناسه') }} <bdi dir="ltr">{{ lic.license_id }}</bdi></small>
+  </div>
+  {% endif %}
+</div>
+
+{% if lic.state == 'grace' %}
+  <div class="alert alert-danger">{{ t('لایسنس تمام شده است. اگر تا این تاریخ تمدید نشود، پنل مدیریت فقط قابل مشاهده می‌شود:') }} <bdi dir="ltr">{{ day(lic.grace_until) }}</bdi> ({{ lic.grace_left }} {{ t('روز دیگر') }})</div>
+{% elif lic.state == 'readonly' %}
+  <div class="alert alert-danger">{{ t('پنل مدیریت فقط قابل مشاهده است: افزودن، ویرایش، حذف، ایمپورت و تعویض‌ها غیرفعال‌اند. دفترچه‌ی عمومی، همگام‌سازی تلفن‌ها و هشدارها مثل قبل کار می‌کنند.') }}</div>
+{% elif lic.expiring %}
+  <div class="alert alert-warning">{{ t('لایسنس به‌زودی تمام می‌شود؛ برای تمدید با توسعه‌دهنده تماس بگیرید.') }}</div>
+{% endif %}
+
+<p class="text-muted small">{{ t('برای تمدید، کلید تازه را از توسعه‌دهنده بگیرید، در فایل .env جلوی LICENSE_KEY بگذارید و سرویس را ری‌استارت کنید. بعد از پایان مهلت، پنل فقط قابل مشاهده می‌شود ولی دفترچه‌ی عمومی همیشه کار می‌کند.') }}</p>
+{% endif %}
+{% endblock %}

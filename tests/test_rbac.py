@@ -78,7 +78,7 @@ class RegistryTests(unittest.TestCase):
         'pbx.view', 'pbx.sync', 'pbx.review', 'outages.view', 'outages.export', 'outages.alerts',
         'trash.view', 'trash.restore', 'trash.purge', 'backup.download', 'users.manage', 'roles.manage', 'activity_log.view',
         'calls.view', 'calls.export', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts',
-        'recordings.view', 'recordings.listen', 'recordings.download', 'daynight.view', 'daynight.toggle',
+        'recordings.view', 'recordings.listen', 'recordings.download', 'daynight.view', 'daynight.toggle', 'license.view',
     }
 
     def test_all_current_features_registered(self):
@@ -125,7 +125,7 @@ class RegistryTests(unittest.TestCase):
             ('دفترچه', ['admin', 'mac_import']),
             ('پایش', ['pbx_status', 'pbx_health_page', 'outages_report', 'dnd_report', 'pbx_directory']),
             ('مرکز تلفن', ['calls_report', 'recordings_list', 'daynight_page']),
-            ('سیستم', ['trash', 'admin_users', 'admin_roles', 'activity_log']),
+            ('سیستم', ['trash', 'admin_users', 'admin_roles', 'activity_log', 'license_page']),
         ])
 
     def test_system_roles(self):

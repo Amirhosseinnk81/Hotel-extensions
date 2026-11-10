@@ -287,6 +287,15 @@ h1,h2,h3,h4,h5,h6{color:var(--text)}
 .header-link{color:var(--sb-text);text-decoration:none;font-size:.9rem;font-weight:600;padding:.25rem .1rem;border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
 .header-link:hover{color:var(--accent);border-bottom-color:var(--accent)}
 .site-header .lang-btn{color:var(--sb-text)}
+.license-banner{padding:.55rem .9rem;margin-bottom:1rem;font-size:.9rem}
+.license-banner a{margin-inline-start:.5rem;font-weight:700}
+.license-state{font-size:1.5rem}
+.license-customer{font-size:1.15rem;font-weight:800;color:var(--text)}
+.site-credit{display:block;margin-top:.3rem;font-size:.76rem;color:var(--muted)}
+.site-credit a{color:inherit;font-weight:700;text-decoration:none;border-bottom:1px dotted currentColor}
+.site-credit a:hover{color:var(--accent)}
+.shell-footer{padding:.9rem 1rem 1.1rem;text-align:center;border-top:1px solid var(--line)}
+.shell-footer .site-credit{margin-top:0}
 .site-footer{margin-top:3rem;padding:1.1rem 0;text-align:center;font-size:.82rem;color:var(--muted);border-top:1px solid var(--line)}
 .alert-bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s,background-color .15s}
 .site-header .alert-bell{background:transparent;border-color:var(--sb-line);color:var(--sb-text)}
@@ -613,7 +622,7 @@ details.form-collapsible[open] > summary{padding-bottom:.9rem;border-bottom:1px 
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
 }
 @media print{
-  .no-print,.sidebar,.topbar,.site-header,.site-footer,.toast-stack,.sb-scrim{display:none !important}
+  .no-print,.sidebar,.topbar,.site-header,.site-footer,.shell-footer,.toast-stack,.sb-scrim{display:none !important}
   body{background:#fff;color:#000}
   .app-shell{display:block}
   .app-content{padding:0;max-width:none}

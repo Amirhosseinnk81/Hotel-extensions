@@ -1,0 +1,63 @@
+Araz Desk — Proprietary Software License
+
+Copyright (c) 2026 Amirhossein Naeimaei (امیرحسین نعیمائی). All rights reserved.
+http://amirhosseinnk.ir/
+
+1. Ownership
+   This software, its source code, documentation, design and all related files
+   (the "Software") are the exclusive property of the copyright holder named
+   above. The Software is licensed, not sold. No ownership right is transferred.
+
+2. No use without permission
+   Except as stated in section 3, no person or organization may use, copy,
+   modify, merge, publish, distribute, sublicense, sell, host or create
+   derivative works of the Software, in whole or in part, without the prior
+   written permission of the copyright holder. Access to the source code (for
+   example through a code hosting service) does not grant any such right.
+
+3. Permitted use
+   Hotel Araz is granted a non-exclusive, non-transferable permission to install
+   and run the Software on its own servers for its own internal operations, and
+   to make backup copies needed for that purpose, for the period of validity of
+   the license key issued by the copyright holder (normally one year, renewable).
+   This permission does not include the right to give, sell or license the
+   Software to any third party.
+
+   When a license key has ended and has not been renewed, the public extension
+   directory keeps working and the administration panel becomes read-only until
+   a new key is installed. Removing, bypassing or altering the license check, or
+   using a key issued for someone else, is not permitted.
+
+4. Notices
+   The copyright notice, this license and the developer credit shown in the
+   Software's user interface must be kept intact in every permitted copy.
+
+5. Third-party components
+   The Software uses third-party libraries (listed in requirements.txt and
+   loaded by the pages). They remain under their own licenses, which are not
+   changed by this license.
+
+6. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+   IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. Termination
+   Any use outside this license ends the permission in section 3 automatically.
+
+For permission requests, contact the copyright holder through the address above.
+
+--------------------------------------------------------------------------------
+خلاصه‌ی فارسی (متن انگلیسی بالا ملاک است)
+
+این نرم‌افزار (Araz Desk) متعلق به امیرحسین نعیمائی است و همه‌ی حقوق آن محفوظ
+است. استفاده، کپی، تغییر، انتشار یا فروش آن بدون اجازه‌ی کتبی صاحب اثر مجاز
+نیست. هتل آراز اجازه دارد آن را فقط برای کار داخلی خودش روی سرورهای خودش نصب و
+اجرا کند، در مدت اعتبار کلید لایسنسی که صاحب اثر صادر می‌کند (معمولاً یک سال، قابل
+تمدید)، و حق واگذاری آن به دیگران را ندارد. بعد از پایان کلید و تا تمدید آن، دفترچه‌ی
+عمومی کار می‌کند و پنل مدیریت فقط قابل مشاهده است؛ حذف یا دورزدن بررسی لایسنس مجاز
+نیست. نام توسعه‌دهنده و این مجوز باید در
+هر نسخه‌ی مجاز باقی بماند. نرم‌افزار بدون هیچ ضمانتی ارائه می‌شود.

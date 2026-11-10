@@ -7,7 +7,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Extension Directory{% endblock %} | Hotel Araz</title>
+<title>{% block title %}Extension Directory{% endblock %} | {{ app_name }}</title>
 <script>
   (function(){
     try {
@@ -36,6 +36,12 @@
   <button type="button" class="theme-btn" data-theme-value="light" title="{{ t('روشن') }}">{{ ico('sun') }}{% if labels %}<span>{{ t('روشن') }}</span>{% endif %}</button>
   <button type="button" class="theme-btn" data-theme-value="dark" title="{{ t('تیره') }}">{{ ico('moon') }}{% if labels %}<span>{{ t('تیره') }}</span>{% endif %}</button>
   <button type="button" class="theme-btn" data-theme-value="gold" title="{{ t('طلایی') }}">{{ ico('sparkle') }}{% if labels %}<span>{{ t('طلایی') }}</span>{% endif %}</button>
+{% endmacro %}
+
+{# Product name and developer credit; shown at the bottom of every page (the LICENSE requires it to stay). #}
+{% macro site_credit() %}
+  <span class="site-credit"><bdi dir="ltr">{{ app_name }}</bdi> · {{ t('طراحی و توسعه:') }}
+    <a href="{{ developer.url }}" target="_blank" rel="noopener noreferrer">{{ developer.en if current_lang() == 'en' else developer.fa }}</a></span>
 {% endmacro %}
 
 {% macro alert_bell() %}
@@ -67,7 +73,7 @@
 <div class="app-shell">
   <aside class="sidebar no-print" id="sidebar" aria-label="{{ t('پنل مدیریت') }}">
     <a class="sb-brand" href="{{ admin_home() or url_for('index') }}">
-      <span class="brand-mark">HA</span>
+      <span class="brand-mark" title="{{ app_name }}">{{ app_mark }}</span>
       <span class="brand-text"><strong>{{ t('هتل آراز') }}</strong><small>{{ t('پنل مدیریت') }}</small></span>
     </a>
     <nav class="sb-nav">
@@ -104,13 +110,24 @@
       </div>
     </header>
     <main id="main" class="app-content">
+      {% set lic = license_status() %}
+      {% if lic.state == 'readonly' %}
+        <div class="alert alert-danger license-banner no-print">🔒 {{ t('لایسنس نرم‌افزار معتبر نیست؛ پنل مدیریت فقط قابل مشاهده است.') }}
+          {% if can('license.view') %}<a href="{{ url_for('license_page') }}">{{ t('جزئیات لایسنس') }}</a>{% endif %}</div>
+      {% elif lic.state == 'grace' %}
+        <div class="alert alert-danger license-banner no-print">{{ t('لایسنس نرم‌افزار تمام شده است؛ روزهای مانده تا فقط‌مشاهده شدن پنل:') }} {{ lic.grace_left }}
+          {% if can('license.view') %}<a href="{{ url_for('license_page') }}">{{ t('جزئیات لایسنس') }}</a>{% endif %}</div>
+      {% elif lic.expiring %}
+        <div class="alert alert-warning license-banner no-print">{{ t('روزهای مانده تا پایان لایسنس نرم‌افزار:') }} {{ lic.days_left }}
+          {% if can('license.view') %}<a href="{{ url_for('license_page') }}">{{ t('جزئیات لایسنس') }}</a>{% endif %}</div>
+      {% endif %}
       {{ flash_messages() }}
 {% else %}
 {# ===================== Public layout: top header ===================== #}
 <header class="site-header no-print">
   <div class="container header-inner">
     <a class="brand" href="{{ url_for('index') }}">
-      <span class="brand-mark">HA</span>
+      <span class="brand-mark" title="{{ app_name }}">{{ app_mark }}</span>
       <span class="brand-text">
         <strong>{{ t('هتل آراز') }}</strong>
         <small>{{ t('دفترچه داخلی‌های هتل') }}</small>
@@ -140,6 +157,7 @@
 
 {% if in_shell %}
     </main>
+    <footer class="shell-footer no-print">{{ site_credit() }}</footer>
   </div>
 </div>
 {% else %}
@@ -148,6 +166,7 @@
 <footer class="site-footer no-print">
   <div class="container">
     <span>© {{ footer_year() }} {{ t('هتل آراز — دفترچه ارتباطات داخلی') }}</span>
+    {{ site_credit() }}
   </div>
 </footer>
 {% endif %}

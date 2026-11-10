@@ -6,7 +6,7 @@
 <div class="mt-3 mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
   <div>
     <h1 class="h2 mb-1">{{ t('سلامت سرور ایزابل') }}</h1>
-    <p class="text-muted mb-0">{{ t('فقط خواندنی: CPU، حافظه و دیسک از داشبورد ایزابل؛ زمان روشن‌بودن، تماس‌های جاری و ترانک‌ها از AMI.') }}</p>
+    <p class="text-muted mb-0">{{ t('فقط خواندنی: زمان روشن‌بودن، تماس‌های جاری و ترانک‌ها از AMI یا SSH؛ CPU، حافظه و دیسک از SSH یا داشبورد ایزابل.') }}</p>
   </div>
   {% if configured %}
   <form method="post" action="{{ url_for('pbx_health_refresh') }}" class="no-print">
@@ -17,7 +17,7 @@
 </div>
 
 {% if not configured %}
-  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI یا وب‌پنل ایزابل لازم است؛ راهنما در بخش ۱۱ فایل DEPLOYMENT.md.') }}</div>
+  <div class="alert alert-warning">{{ t('برای این صفحه اتصال AMI، SSH یا وب‌پنل ایزابل لازم است؛ راهنما در بخش‌های ۱۱ و ۱۴ فایل DEPLOYMENT.md.') }}</div>
 {% else %}
   <div class="alert {{ 'alert-light' if snapshot.state == 'ok' else 'alert-warning' }} py-2">
     {% if snapshot.updated_at %}{{ t('آخرین خواندن از ایزابل:') }} <bdi dir="ltr">{{ snapshot.updated_at | local_dt('%Y/%m/%d %H:%M:%S') }}</bdi>{% else %}{{ t('هنوز از ایزابل خوانده نشده است.') }}{% endif %}
@@ -103,7 +103,7 @@
           <tr><td colspan="2" class="text-muted">{{ t('ترانک رجیستری (outbound registration) تعریف نشده است.') }}</td></tr>
         {% endfor %}
       {% else %}
-        <tr><td colspan="2" class="text-muted">{{ t('نامشخص') }} — {{ reading.ami_error.fa if reading.ami_error else t('AMI تنظیم نشده است.') }}</td></tr>
+        <tr><td colspan="2" class="text-muted">{{ t('نامشخص') }} — {{ reading.ami_error.fa if reading.ami_error else t('AMI یا SSH تنظیم نشده است.') }}</td></tr>
       {% endif %}
     </tbody>
   </table>

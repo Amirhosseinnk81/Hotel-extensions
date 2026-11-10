@@ -19,3 +19,5 @@ cp.js
 *.patch
 # safety copies made automatically before database migrations
 backups/
+# the license signing key must never be in the project folder or the repository
+license_private*.json

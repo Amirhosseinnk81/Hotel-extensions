@@ -400,6 +400,57 @@ for _k, _v in {
     'درخواست تعویض معتبر نیست.': 'The switch request is not valid.',
 }.items():
     EN.setdefault(norm(_k), _v)
+EN.setdefault(norm('طراحی و توسعه:'), 'Designed & developed by')
+# SSH link (alternative to AMI) and the phone web-config button.
+for _k, _v in {
+    'AMI یا SSH تنظیم نشده است.': 'AMI or SSH is not configured.',
+    'اتصال AMI یا SSH به ایزابل تنظیم نشده است.': 'Neither AMI nor SSH to Issabel is configured.',
+    'برای این صفحه اتصال AMI یا SSH به ایزابل لازم است (PBX_AMI_* یا PBX_SSH_*)؛ راهنما در بخش‌های ۱۱ و ۱۴ فایل DEPLOYMENT.md.':
+        'This page needs the AMI or SSH connection to Issabel (PBX_AMI_* or PBX_SSH_*); see sections 11 and 14 of DEPLOYMENT.md.',
+    'برای این صفحه اتصال AMI، SSH یا وب‌پنل ایزابل لازم است؛ راهنما در بخش‌های ۱۱ و ۱۴ فایل DEPLOYMENT.md.':
+        'This page needs the AMI, SSH or web-panel connection to Issabel; see sections 11 and 14 of DEPLOYMENT.md.',
+    'فقط خواندنی: زمان روشن‌بودن، تماس‌های جاری و ترانک‌ها از AMI یا SSH؛ CPU، حافظه و دیسک از SSH یا داشبورد ایزابل.':
+        'Read-only: uptime, calls in progress and trunks from AMI or SSH; CPU, memory and disk from SSH or the Issabel dashboard.',
+    'کاربر یا کلید نوشتن (PBX_AMI_WRITE_USER یا PBX_SSH_WRITE_KEY) تنظیم نشده است.': 'No write user or key (PBX_AMI_WRITE_USER or PBX_SSH_WRITE_KEY) is configured.',
+    'باز کردن وب کانفیگ تلفن': 'Open the phone web config',
+    'آخرین IP که ایزابل برای این تلفن دیده است': 'The last IP Issabel saw for this phone',
+}.items():
+    EN.setdefault(norm(_k), _v)
+# Software license key (license_key.py).
+for _k, _v in {
+    'لایسنس': 'License',
+    'لایسنس نرم‌افزار': 'Software license',
+    'مشاهده‌ی وضعیت لایسنس': 'View license status',
+    'تاریخ پایان لایسنس نرم‌افزار و روزهای باقی‌مانده': 'End date of the software license and the days left',
+    'بررسی لایسنس در این نسخه راه‌اندازی نشده است (حالت آزمایشی)؛ همه‌ی بخش‌ها بدون محدودیت کار می‌کنند.':
+        'License checking is not set up in this version (trial mode); everything works without limits.',
+    'معتبر': 'Valid',
+    'نامعتبر': 'Not valid',
+    'پایان‌یافته (مهلت)': 'Ended (grace period)',
+    'لایسنس به پایان رسیده است.': 'The license has ended.',
+    'کلید لایسنس (LICENSE_KEY) در فایل .env نیست.': 'There is no license key (LICENSE_KEY) in the .env file.',
+    'کلید لایسنس پذیرفته نشد (ناقص، تغییریافته یا برای نرم‌افزار دیگر).': 'The license key was not accepted (incomplete, altered or for another product).',
+    'پنل تا پایان مهلت کامل کار می‌کند.': 'The panel works fully until the grace period ends.',
+    'همه‌ی بخش‌ها فعال‌اند.': 'Everything is enabled.',
+    'روزهای باقی‌مانده': 'Days left',
+    'تاریخ پایان:': 'Ends on:',
+    'صادرشده برای': 'Issued to',
+    'شناسه': 'ID',
+    'روز دیگر': 'more days',
+    'لایسنس تمام شده است. اگر تا این تاریخ تمدید نشود، پنل مدیریت فقط قابل مشاهده می‌شود:':
+        'The license has ended. Unless it is renewed by this date, the admin panel becomes read-only:',
+    'پنل مدیریت فقط قابل مشاهده است: افزودن، ویرایش، حذف، ایمپورت و تعویض‌ها غیرفعال‌اند. دفترچه‌ی عمومی، همگام‌سازی تلفن‌ها و هشدارها مثل قبل کار می‌کنند.':
+        'The admin panel is read-only: adding, editing, deleting, importing and switching are disabled. The public directory, the phone sync and the alerts work as before.',
+    'لایسنس به‌زودی تمام می‌شود؛ برای تمدید با توسعه‌دهنده تماس بگیرید.': 'The license ends soon; contact the developer to renew it.',
+    'برای تمدید، کلید تازه را از توسعه‌دهنده بگیرید، در فایل .env جلوی LICENSE_KEY بگذارید و سرویس را ری‌استارت کنید. بعد از پایان مهلت، پنل فقط قابل مشاهده می‌شود ولی دفترچه‌ی عمومی همیشه کار می‌کند.':
+        'To renew, get a new key from the developer, put it after LICENSE_KEY in the .env file and restart the service. After the grace period the panel becomes read-only, but the public directory always works.',
+    'لایسنس نرم‌افزار معتبر نیست؛ پنل مدیریت فقط قابل مشاهده است.': 'The software license is not valid; the admin panel is read-only.',
+    'لایسنس نرم‌افزار معتبر نیست؛ پنل مدیریت تا تمدید لایسنس فقط قابل مشاهده است.': 'The software license is not valid; the admin panel is read-only until it is renewed.',
+    'لایسنس نرم‌افزار تمام شده است؛ روزهای مانده تا فقط‌مشاهده شدن پنل:': 'The software license has ended; days until the panel becomes read-only:',
+    'روزهای مانده تا پایان لایسنس نرم‌افزار:': 'Days until the software license ends:',
+    'جزئیات لایسنس': 'License details',
+}.items():
+    EN.setdefault(norm(_k), _v)
 JS_KEYS += [norm(k) for k in ('مزاحم نشوید فعال است', 'انتقال تماس', 'همیشه', 'هنگام اشغال', 'هنگام عدم پاسخ', 'نامشخص', 'فعال', 'غیرفعال', 'ندارد')
             if norm(k) not in JS_KEYS]
 

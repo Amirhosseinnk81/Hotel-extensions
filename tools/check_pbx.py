@@ -1,6 +1,6 @@
 """Check every PBX connection the app is configured for, without starting the app.
 
-    python tools/check_pbx.py                  # AMI, CDR database and web panel: reachable? login accepted?
+    python tools/check_pbx.py                  # AMI or SSH, CDR database and web panel: reachable? login accepted?
     python tools/check_pbx.py --dbget 50       # also time 50 AstDB reads (DBGet), to size the DND snapshot
     python tools/check_pbx.py --dashboard      # also show what was understood from the Issabel dashboard (health page)
     python tools/check_pbx.py --test-daynight-write   # the ONE writing check: writes HOTELTEST/probe (no dialplan reads it)
@@ -22,7 +22,7 @@ import envfile  # noqa: E402
 
 envfile.load_dotenv(envfile.env_path(os.path.abspath(ROOT)))
 
-from pbx_connectors import AmiReader, AmiWriter, CdrClient, ConnectorError, load_settings  # noqa: E402
+from pbx_connectors import CdrClient, ConnectorError, load_settings, open_reader, open_writer  # noqa: E402
 import pbx_daynight  # noqa: E402
 import pbx_health  # noqa: E402
 from pbx_sync import AMIError, DEFAULT_LOGIN_PATH, DEFAULT_PEERS_PATH, IssabelWebScraper, page_to_text  # noqa: E402
@@ -39,18 +39,27 @@ def fail(name, exc):
     return False
 
 
-def check_ami(settings, dbget):
-    ami = settings.ami
-    if not ami.ready:
-        print('  AMI        not configured (PBX_AMI_HOST / PBX_AMI_USER / PBX_AMI_SECRET)')
+def check_link(settings, dbget):
+    """AMI or SSH, whichever PBX_LINK picks (the features use the same choice)."""
+    if settings.link is None:
+        print('  AMI / SSH  not configured (PBX_AMI_HOST / PBX_AMI_USER / PBX_AMI_SECRET, or PBX_SSH_*)')
         return True
     started = time.monotonic()
+    name = 'AMI' if settings.link == 'ami' else 'SSH'
     try:
-        with AmiReader(settings) as reader:
-            login_ms = (time.monotonic() - started) * 1000
+        with open_reader(settings) as reader:
             status = reader.core_status()
+            login_ms = (time.monotonic() - started) * 1000
             driver = reader.driver()
-            print(f'  AMI        OK  {ami.host}:{ami.port} as {ami.user}, login {ami.auth} in {login_ms:.0f} ms')
+            if settings.link == 'ami':
+                ami = settings.ami
+                print(f'  AMI        OK  {ami.host}:{ami.port} as {ami.user}, login {ami.auth} in {login_ms:.0f} ms')
+            else:
+                ssh = settings.ssh
+                print(f'  SSH        OK  {ssh.user}@{ssh.host}:{ssh.port}, first answer in {login_ms:.0f} ms'
+                      f"{', write key set' if ssh.write_key else ''}")
+                system = reader.system()
+                print(f"             CPU {system['cpu']}%, memory {system['memory']}%, disks {system['disks']}, services {system['services']}")
             print(f'             driver: {driver}' + (' (detected)' if settings.sip_driver == 'auto' else ' (PBX_SIP_DRIVER)'))
             print(f"             Asterisk up since {status['startup'] or '?'}, last reload {status['reload'] or '?'}, "
                   f"{status['current_calls']} call(s) now")
@@ -58,10 +67,13 @@ def check_ami(settings, dbget):
                 begin = time.monotonic()
                 found = reader.db_get_many('DND', [str(100 + i) for i in range(dbget)])
                 per = (time.monotonic() - begin) * 1000 / dbget
-                print(f'             DBGet: {dbget} reads in {per * dbget:.0f} ms ({per:.1f} ms each, {len(found)} key(s) exist); '
-                      f'about {per * 4 / 1000:.2f} s per 1 extension x 4 families -> x your extension count')
+                if settings.link == 'ami':
+                    print(f'             DBGet: {dbget} reads in {per * dbget:.0f} ms ({per:.1f} ms each, {len(found)} key(s) exist); '
+                          f'about {per * 4 / 1000:.2f} s per 1 extension x 4 families -> x your extension count')
+                else:  # SSH reads a whole family in one call, whatever the count
+                    print(f'             AstDB over SSH: the DND family ({len(found)} of {dbget} sample keys set) in {per * dbget:.0f} ms')
     except ConnectorError as exc:
-        return fail('AMI', exc)
+        return fail(name, exc)
     return True
 
 
@@ -119,10 +131,12 @@ def test_daynight_write(settings):
     method = (os.getenv('PBX_DAYNIGHT_WRITE_METHOD') or 'setvar').strip().lower()
     method = method if method in pbx_daynight.WRITE_METHODS else 'setvar'
     value = 'T' + str(int(time.time()))
-    print(f'  Write test: {pbx_daynight.TEST_FAMILY}/{pbx_daynight.TEST_KEY} = {value} with method {method} as {settings.ami_write.user or "(no write user)"}')
+    who = settings.ami_write.user if settings.link == 'ami' else ('the SSH write key' if settings.ssh.write_key else '')
+    print(f'  Write test: {pbx_daynight.TEST_FAMILY}/{pbx_daynight.TEST_KEY} = {value} over {settings.link or "?"}'
+          f'{" with method " + method if settings.link == "ami" else ""} as {who or "(no write user / key)"}')
     try:
-        AmiWriter(settings).run(pbx_daynight.test_actions(method, value))
-        with AmiReader(settings) as reader:
+        open_writer(settings).set_probe(value, method)
+        with open_reader(settings) as reader:
             found = reader.db_get(pbx_daynight.TEST_FAMILY, pbx_daynight.TEST_KEY)
     except ConnectorError as exc:
         return fail('Write test', exc)
@@ -144,7 +158,7 @@ def main(argv):
             sys.exit('usage: --dbget <count 1..500>')
     settings = load_settings()
     print('PBX connections:')
-    results = [check_ami(settings, dbget), check_cdr(settings), check_web('--dashboard' in argv)]
+    results = [check_link(settings, dbget), check_cdr(settings), check_web('--dashboard' in argv)]
     if '--test-daynight-write' in argv:
         results.append(test_daynight_write(settings))
     return 0 if all(results) else 1

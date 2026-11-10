@@ -13,6 +13,7 @@ import os
 import re
 import socket
 import sys
+import time
 import unittest
 from datetime import datetime
 from unittest import mock
@@ -143,6 +144,9 @@ class AmiReaderTests(AmiCase):
         self.assertEqual(status, {'startup': '2026-10-01 03:15:00', 'reload': '2026-10-20 11:00:05', 'current_calls': 7})
         self.assertEqual(server.seen[0]['Action'], 'Challenge')
         self.assertNotIn(SECRET, str(server.seen))
+        deadline = time.monotonic() + 2  # the fake server records the Logoff on its own thread
+        while server.seen[-1]['Action'] != 'Logoff' and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(server.seen[-1]['Action'], 'Logoff')  # the connection is closed again
 
     def test_plain_login_still_possible(self):

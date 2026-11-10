@@ -23,6 +23,8 @@ def read_snapshot(reader, extensions):
     Only extensions with something switched on appear in flags; 'scanned' tells which extensions were
     looked at, so an extension that is not in it is "unknown", not "off"."""
     extensions = sorted({str(e) for e in extensions})
+    if hasattr(reader, 'prefetch'):  # SSH: all four families in one call
+        reader.prefetch([family for family, _key in FAMILIES])
     flags = {}
     for family, key in FAMILIES:
         for ext, value in reader.db_get_many(family, extensions).items():

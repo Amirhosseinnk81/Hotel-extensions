@@ -53,3 +53,11 @@ sed -i 's/\r$//' /tmp/collect_pbx_info.sh
 | `python tools/check_pbx.py --dbget 50` | زمان ۵۰ خواندن AstDB، برای تنظیم `PBX_SNAPSHOT_TTL` |
 | `python tools/check_pbx.py --dashboard` | آنچه از داشبورد ایزابل فهمیده شد (CPU، حافظه، دیسک، سرویس‌ها) |
 | `python tools/check_pbx.py --test-daynight-write` | **تنها آزمایش نوشتنی:** کلید بی‌اثر `HOTELTEST/probe` را با کاربر و روش نوشتنِ روز/شب می‌نویسد و دوباره می‌خواند؛ به `DAYNIGHT` دست نمی‌زند |
+
+## ۴. کلید لایسنس — `make_license.py` (فقط برای توسعه‌دهنده)
+
+روی کامپیوتر توسعه‌دهنده اجرا می‌شود، نه سرور هتل: `init` (یک بار، ساخت جفت‌کلید)، `issue --customer "Hotel Araz"` (کلید یک‌ساله) و `show <key>`. کلید خصوصی بیرون از پوشه‌ی پروژه می‌ماند. راهنما: بخش ۱۳ فایل `DEPLOYMENT.md`.
+
+## ۵. اسکریپت SSH ایزابل — `hotel-pbx.sh`
+
+روی سرور ایزابل نصب می‌شود (`/usr/local/sbin/hotel-pbx`) و تنها چیزی است که کلید SSH برنامه اجازه‌ی اجرای آن را دارد (forced command). فقط چند دستور ثابت را می‌پذیرد: خواندن AstDB برای چند خانواده‌ی مشخص، وضعیت هسته، ترانک‌ها، peerها، CPU/حافظه/دیسک؛ و با کلید `rw` فقط تعویض روز/شب و کلید آزمایشی `HOTELTEST`. راهنما: بخش ۱۴ فایل `DEPLOYMENT.md`.

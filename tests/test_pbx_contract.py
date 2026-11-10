@@ -86,9 +86,13 @@ class SettingsContractTests(unittest.TestCase):
             self.assertEqual(ticks, [perms is None or key in perms for perms in roles], key)
 
     def test_one_place_writes_to_the_pbx(self):
-        self.assertEqual(read('app.py').count('AmiWriter('), 1)              # the day/night switch
-        self.assertEqual(read('tools/check_pbx.py').count('AmiWriter('), 1)  # the HOTELTEST write test
+        self.assertEqual(read('app.py').count('open_writer('), 1)              # the day/night switch
+        self.assertEqual(read('tools/check_pbx.py').count('open_writer('), 1)  # the HOTELTEST write test
+        connectors = read('pbx_connectors.py')
+        self.assertEqual(connectors.count('AmiWriter(settings)') + connectors.count('SshWriter(settings)'), 2)  # only in open_writer
         for path in CODE:
+            self.assertNotIn('AmiWriter(', read(path)) if path not in ('pbx_connectors.py',) else None
+            self.assertNotIn('SshWriter(', read(path)) if path not in ('pbx_connectors.py',) else None
             text = read(path)
             if path not in ('pbx_daynight.py', 'pbx_connectors.py'):
                 self.assertNotIn("'DBPut'", text, path)

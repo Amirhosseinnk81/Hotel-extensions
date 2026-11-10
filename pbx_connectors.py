@@ -5,6 +5,9 @@ its own sockets, so timeouts, error wording and secret handling live in one file
 
   AmiReader  - read-only AMI session (DBGet, CoreStatus, trunk registry, SIP driver detection).
                One short-lived connection per snapshot, opened with `with AmiReader(settings) as ami:`.
+  SshReader  - the same reads over SSH, as an alternative to AMI: a restricted key whose only possible
+               command is tools/hotel-pbx.sh on the PBX (forced command). Also CPU / memory / disk.
+  open_reader / open_writer - pick AMI or SSH (PBX_LINK); features call these, never a class directly.
   CdrClient  - read-only MySQL access to asteriskcdrdb.cdr (SELECT only, one connection per query).
 
 Every failure becomes a ConnectorError with a `kind` (config / unreachable / auth / timeout / permission /
@@ -18,12 +21,18 @@ Settings come only from the environment (.env, see .env.example):
   PBX_SIP_DRIVER      auto (default) / sip / pjsip
   PBX_CDR_HOST / PBX_CDR_PORT / PBX_CDR_USER / PBX_CDR_PASS / PBX_CDR_DB / PBX_CDR_TIMEOUT
   PBX_SNAPSHOT_TTL    seconds between two reads of the same snapshot (default 120, minimum 30)
+  PBX_LINK            auto (default: AMI if configured, else SSH) / ami / ssh
+  PBX_SSH_HOST / PBX_SSH_PORT / PBX_SSH_USER / PBX_SSH_KEY / PBX_SSH_WRITE_KEY / PBX_SSH_KNOWN_HOSTS
+  PBX_SSH_TIMEOUT / PBX_SSH_MAX_SECONDS / PBX_SSH_BIN
 """
 import os
 import re
+import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
-from pbx_sync import AMIClient, AMIError
+import pbx_daynight
+from pbx_sync import AMIClient, AMIError, parse_peer_listing
 
 # ---- errors --------------------------------------------------------------------------------------
 FA_MESSAGES = {
@@ -35,6 +44,7 @@ FA_MESSAGES = {
     'driver': 'درایور SIP ایزابل تشخیص داده نشد؛ PBX_SIP_DRIVER را در .env تنظیم کنید.',
     'protocol': 'پاسخ ایزابل قابل فهم نبود؛ جزئیات در لاگ سرور ثبت شد.',
     'dependency': 'بسته‌ی لازم روی سرور برنامه نصب نیست (pip install -r requirements.txt).',
+    'hostkey': 'کلید شناسایی سرور ایزابل با کلید ثبت‌شده (PBX_SSH_KNOWN_HOSTS) نمی‌خواند؛ تا بررسی نشود اتصال برقرار نمی‌شود.',
 }
 
 
@@ -100,15 +110,52 @@ class CdrSettings:
 
 
 @dataclass(frozen=True)
+class SshSettings:
+    host: str = ''
+    port: int = 22
+    user: str = ''
+    key: str = ''           # private key file of the read-only key (forced command "hotel-pbx ro")
+    write_key: str = ''     # private key file of the day / night key ("hotel-pbx rw"); empty = no switching
+    known_hosts: str = ''   # file with the PBX's host key: the connection is refused if it does not match
+    timeout: float = 10.0   # connect timeout
+    max_seconds: float = 30.0
+    binary: str = 'ssh'     # Windows 10 / Server 2019+: C:\Windows\System32\OpenSSH\ssh.exe
+
+    @property
+    def ready(self):
+        return bool(self.host and self.user and self.key and self.known_hosts)
+
+
+@dataclass(frozen=True)
 class Settings:
     ami: AmiSettings
     cdr: CdrSettings
     sip_driver: str = 'auto'
     snapshot_ttl: int = 120
     ami_write: AmiSettings = field(default_factory=AmiSettings)  # separate user, only for switching day / night
+    ssh: SshSettings = field(default_factory=SshSettings)
+    link_wanted: str = 'auto'
+
+    @property
+    def link(self):
+        """'ami' / 'ssh' / None: how the features reach AstDB and the Asterisk CLI."""
+        if self.link_wanted == 'ami':
+            return 'ami' if self.ami.ready else None
+        if self.link_wanted == 'ssh':
+            return 'ssh' if self.ssh.ready else None
+        return 'ami' if self.ami.ready else 'ssh' if self.ssh.ready else None
+
+    @property
+    def reader_ready(self):
+        return self.link is not None
+
+    @property
+    def writer_ready(self):
+        return (self.link == 'ami' and self.ami_write.ready) or (self.link == 'ssh' and bool(self.ssh.write_key))
 
 
 SIP_DRIVERS = ('auto', 'sip', 'pjsip')
+LINKS = ('auto', 'ami', 'ssh')
 MIN_SNAPSHOT_TTL = 30
 
 
@@ -126,6 +173,7 @@ def load_settings(environ=None):
         return value if minimum is None else max(minimum, value)
 
     driver = text('PBX_SIP_DRIVER', 'auto').lower()
+    link = text('PBX_LINK', 'auto').lower()
     return Settings(
         ami=AmiSettings(host=text('PBX_AMI_HOST'), port=number('PBX_AMI_PORT', '5038'), user=text('PBX_AMI_USER'),
                         secret=env.get('PBX_AMI_SECRET', ''), timeout=number('PBX_AMI_TIMEOUT', '5', float, 1.0),
@@ -139,6 +187,11 @@ def load_settings(environ=None):
         ami_write=AmiSettings(host=text('PBX_AMI_HOST'), port=number('PBX_AMI_PORT', '5038'), user=text('PBX_AMI_WRITE_USER'),
                               secret=env.get('PBX_AMI_WRITE_SECRET', ''), timeout=number('PBX_AMI_TIMEOUT', '5', float, 1.0),
                               max_seconds=15.0, auth='plain' if text('PBX_AMI_AUTH').lower() == 'plain' else 'md5'),
+        ssh=SshSettings(host=text('PBX_SSH_HOST') or text('PBX_AMI_HOST'), port=number('PBX_SSH_PORT', '22'),
+                        user=text('PBX_SSH_USER'), key=text('PBX_SSH_KEY'), write_key=text('PBX_SSH_WRITE_KEY'),
+                        known_hosts=text('PBX_SSH_KNOWN_HOSTS'), timeout=number('PBX_SSH_TIMEOUT', '10', float, 2.0),
+                        max_seconds=number('PBX_SSH_MAX_SECONDS', '30', float, 5.0), binary=text('PBX_SSH_BIN', 'ssh')),
+        link_wanted=link if link in LINKS else 'auto',
     )
 
 
@@ -323,6 +376,278 @@ class AmiWriter:
         finally:
             client.close()
         return completed
+
+    def set_daynight(self, index, state, method='setvar', devstate=True):
+        return self.run(pbx_daynight.write_actions(index, state, method, devstate))
+
+    def set_probe(self, value, method='setvar'):
+        return self.run(pbx_daynight.test_actions(method, value))
+
+
+# ---- SSH (alternative to AMI) --------------------------------------------------------------------
+# The key on the PBX can only run tools/hotel-pbx.sh (authorized_keys "command="). What we send is one
+# of that script's fixed words with checked arguments; the script checks the same pattern again.
+_SSH_REQUEST = re.compile(r'^[A-Za-z0-9_ -]{1,200}$')
+SSH_FAMILIES = ('DND', 'CF', 'CFB', 'CFU', 'DAYNIGHT', 'TC', pbx_daynight.TEST_FAMILY)
+_ASTDB_LINE = re.compile(r'^/([^/\s]+)/(\S+)\s*:\s?(.*?)\s*$')
+_SIP_REGISTRY = re.compile(r'^(?P<host>\S+)\s+[YN]\s+(?P<user>\S+)\s+\d+\s+(?P<state>\S+(?: \S+)*?)(?:\s{2,}.*)?$')
+_PJSIP_REGISTRY = re.compile(r'^\s*(?P<name>[^\s/]+)/\S+\s.*?\b(?P<state>Registered|Unregistered|Rejected|Stopped|Failed)\b')
+
+
+def _ssh_error(returncode, stderr):
+    text = ' '.join((stderr or '').split())[:300]
+    lowered = text.lower()
+    if 'host key verification failed' in lowered or 'remote host identification has changed' in lowered:
+        kind = 'hostkey'
+    elif 'permission denied' in lowered or 'too many authentication failures' in lowered:
+        kind = 'auth'
+    elif 'timed out' in lowered:
+        kind = 'timeout'
+    elif any(word in lowered for word in ('connection refused', 'no route to host', 'could not resolve', 'network is unreachable',
+                                          'connection closed', 'connection reset')):
+        kind = 'unreachable'
+    else:
+        kind = 'protocol'
+    return ConnectorError(kind, f'ssh exit {returncode}: {text or "no message"}', 'ssh')
+
+
+class SshRunner:
+    """Runs one request through the Windows OpenSSH client. The private key never leaves its file."""
+
+    def __init__(self, ssh):
+        self.ssh = ssh
+
+    def command(self, request, write=False):
+        key = self.ssh.write_key if write else self.ssh.key
+        return [self.ssh.binary, '-i', key, '-p', str(self.ssh.port), '-T',
+                '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
+                '-o', f'UserKnownHostsFile={self.ssh.known_hosts}', '-o', f'ConnectTimeout={int(self.ssh.timeout)}',
+                '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=2', '-o', 'LogLevel=ERROR',
+                f'{self.ssh.user}@{self.ssh.host}', request]
+
+    def run(self, request, write=False):
+        """stdout of the PBX script for one request. Raises ConnectorError (never contains key material)."""
+        if not _SSH_REQUEST.match(request or ''):
+            raise ValueError(f'refusing to send an odd SSH request {request!r}')
+        if not self.ssh.ready or (write and not self.ssh.write_key):
+            raise ConnectorError('config', 'PBX_SSH_HOST / PBX_SSH_USER / PBX_SSH_KEY / PBX_SSH_KNOWN_HOSTS'
+                                 + (' / PBX_SSH_WRITE_KEY' if write else '') + ' are not all set', 'ssh')
+        try:
+            done = subprocess.run(self.command(request, write), capture_output=True, text=True, encoding='utf-8',
+                                  errors='replace', stdin=subprocess.DEVNULL, timeout=self.ssh.max_seconds)
+        except FileNotFoundError as exc:
+            raise ConnectorError('dependency', f'the SSH client "{self.ssh.binary}" was not found (Windows: OpenSSH Client feature)', 'ssh') from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ConnectorError('timeout', f'no answer within {self.ssh.max_seconds:g} s', 'ssh') from exc
+        if done.returncode == 255:
+            raise _ssh_error(done.returncode, done.stderr)
+        out = done.stdout or ''
+        if out.startswith('ERR '):
+            message = out.splitlines()[0][4:]
+            raise ConnectorError('permission' if 'not allowed' in message else 'protocol', f'hotel-pbx: {message}', 'ssh')
+        if done.returncode != 0:
+            raise _ssh_error(done.returncode, done.stderr or out)
+        return out
+
+
+def parse_astdb(text):
+    """Output of 'astdb FAMILY ...' (sections of `database show`) -> {family: {key: value}}."""
+    found, current = {}, None
+    for line in (text or '').splitlines():
+        if line.startswith('== ') and line.endswith(' =='):
+            current = line[3:-3].strip()
+            found.setdefault(current, {})
+            continue
+        match = _ASTDB_LINE.match(line)
+        if match and current and match.group(1) == current:
+            found[current][match.group(2)] = match.group(3)
+    return found
+
+
+def parse_registry_text(driver, text):
+    """`sip show registry` / `pjsip show registrations` -> events shaped like AmiReader.registry()."""
+    events = []
+    for line in (text or '').splitlines():
+        if driver == 'pjsip':
+            match = _PJSIP_REGISTRY.match(line)
+            if match and not line.strip().startswith('<'):
+                events.append({'Event': 'OutboundRegistrationDetail', 'ObjectName': match.group('name'), 'Status': match.group('state')})
+        else:
+            match = _SIP_REGISTRY.match(line.strip())
+            if match and match.group('host').lower() != 'host':
+                events.append({'Event': 'RegistryEntry', 'Host': match.group('host').rsplit(':', 1)[0],
+                               'Username': match.group('user'), 'State': match.group('state').strip()})
+    return events
+
+
+def parse_system(text):
+    """Output of 'system' -> the same dict pbx_health.parse_dashboard returns."""
+    values, disks, services = {}, [], {}
+    for line in (text or '').splitlines():
+        key, _, value = line.partition('=')
+        if key == 'disk':
+            mount, _, percent = value.rpartition(' ')
+            if mount.startswith('/') and percent.isdigit():
+                disks.append({'mount': mount, 'percent': float(percent)})
+        elif key == 'service':
+            name, _, state = value.partition(' ')
+            name = {'mariadb': 'mysql', 'mysqld': 'mysql', 'httpd': 'apache'}.get(name, name)
+            if name in services and services[name] == 'running':
+                continue
+            services[name] = 'running' if state.strip() == 'active' else 'stopped'
+        elif value.strip().isdigit():
+            values[key] = int(value.strip())
+
+    def used(total, free):
+        return round(100.0 * (values[total] - values[free]) / values[total], 1) if values.get(total) and free in values else None
+
+    memory_free = 'mem_MemAvailable' if 'mem_MemAvailable' in values else 'mem_MemFree'
+    return {'cpu': float(values['cpu']) if 'cpu' in values else None, 'memory': used('mem_MemTotal', memory_free),
+            'swap': used('mem_SwapTotal', 'mem_SwapFree') if values.get('mem_SwapTotal') else None,
+            'disks': disks, 'services': services}
+
+
+class SshReader:
+    """The AmiReader interface (db_get, db_get_many, core_status, driver, registry, peer_names) over SSH,
+    plus system() for CPU / memory / disk. One `ssh` run per question; AstDB families are read whole
+    and kept for the rest of this `with` block, so a DND snapshot is a single call."""
+
+    def __init__(self, settings, runner=None):
+        self.settings, self.ssh = settings, settings.ssh
+        self._run = runner or SshRunner(self.ssh).run
+        self._astdb = {}
+        self._driver = None
+
+    def __enter__(self):
+        if not self.ssh.ready:
+            raise ConnectorError('config', 'PBX_SSH_HOST / PBX_SSH_USER / PBX_SSH_KEY / PBX_SSH_KNOWN_HOSTS are not all set', 'ssh')
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def prefetch(self, families):
+        missing = [f for f in dict.fromkeys(families) if f not in self._astdb]
+        for family in missing:
+            if family not in SSH_FAMILIES:
+                raise ConnectorError('permission', f'AstDB family {family} is not readable over SSH', 'ssh')
+        if missing:
+            found = parse_astdb(self._run('astdb ' + ' '.join(missing)))
+            for family in missing:
+                self._astdb[family] = found.get(family, {})
+
+    def db_get(self, family, key):
+        if not (_DB_NAME.match(str(family)) and _DB_NAME.match(str(key))):
+            raise ValueError(f'invalid AstDB name {family!r}/{key!r}')
+        self.prefetch([family])
+        return self._astdb[family].get(str(key))
+
+    def db_get_many(self, family, keys):
+        self.prefetch([family])
+        values = self._astdb[family]
+        return {str(k): values[str(k)] for k in keys if str(k) in values}
+
+    def core_status(self):
+        text = self._run('core')
+        uptime = re.search(r'System uptime:\s*(\d+)', text)
+        reload = re.search(r'Last reload:\s*(\d+)', text)
+        calls = re.search(r'(\d+)\s+active calls?', text)
+        now = datetime.now().replace(microsecond=0)
+
+        def ago(match):
+            return (now - timedelta(seconds=int(match.group(1)))).strftime('%Y-%m-%d %H:%M:%S') if match else None
+        return {'startup': ago(uptime), 'reload': ago(reload), 'current_calls': int(calls.group(1)) if calls else 0}
+
+    def driver(self):
+        if self.settings.sip_driver in ('sip', 'pjsip'):
+            return self.settings.sip_driver
+        if self._driver is None:
+            found = re.search(r'driver=(\w+)', self._run('driver'))
+            if not found or found.group(1) not in ('sip', 'pjsip'):
+                raise ConnectorError('driver', 'neither chan_sip nor res_pjsip is loaded', 'ssh')
+            self._driver = found.group(1)
+        return self._driver
+
+    def peer_names(self):
+        return list(parse_peer_listing(self._run('peers')))
+
+    def registry(self):
+        text = self._run('registry')
+        found = re.search(r'driver=(\w+)', text)
+        driver = found.group(1) if found and found.group(1) in ('sip', 'pjsip') else self.driver()
+        return driver, parse_registry_text(driver, text)
+
+    def system(self):
+        return parse_system(self._run('system'))
+
+
+class SshWriter:
+    """The SSH twin of AmiWriter: uses the separate write key, whose forced command allows only the
+    day / night switch and the HOTELTEST probe. No retry."""
+
+    def __init__(self, settings, runner=None):
+        self.ssh = settings.ssh
+        self._run = runner or SshRunner(self.ssh).run
+
+    def _write(self, request, expected):
+        try:
+            out = self._run(request, write=True)
+        except ConnectorError as exc:
+            exc.completed = 0
+            raise
+        for count, marker in enumerate(expected):
+            if marker not in out:
+                error = ConnectorError('protocol', f'hotel-pbx did not confirm "{marker}": {" ".join(out.split())[:200]}', 'ssh-write')
+                error.completed = count
+                raise error
+        return len(expected)
+
+    def set_daynight(self, index, state, method='setvar', devstate=True):
+        pbx_daynight.write_actions(index, state, 'setvar', devstate)  # same validation as the AMI path
+        return self._write(f'daynight-set {index} {state} {1 if devstate else 0}', ['OK state'] + (['OK blf'] if devstate else []))
+
+    def set_probe(self, value, method='setvar'):
+        pbx_daynight.test_actions('setvar', value)
+        return self._write(f'probe-set {value}', ['OK probe'])
+
+
+class SshPeerSource:
+    """Phone states for the existing phone sync (PBX_SOURCE=ssh), with the web scraper's interface.
+    Errors are AMIError, so a lost PBX is handled exactly like the other sources (PBX-LOST)."""
+
+    def __init__(self, settings, runner=None):
+        self.ssh = settings.ssh
+        self._run = runner or SshRunner(self.ssh).run
+
+    def fetch_peer_states(self):
+        try:
+            text = self._run('peers')
+        except ConnectorError as exc:
+            raise AMIError(f'ssh {exc.kind}: {exc.detail}') from exc
+        peers = parse_peer_listing(text)
+        if not peers:
+            raise AMIError('ssh: the PBX listed no SIP peers')
+        return peers
+
+
+def open_reader(settings):
+    """A reader for the configured link (use as a context manager)."""
+    if settings.link == 'ssh':
+        return SshReader(settings)
+    if settings.link == 'ami':
+        return AmiReader(settings)
+    raise ConnectorError('config', 'neither AMI (PBX_AMI_*) nor SSH (PBX_SSH_*) is configured', 'pbx')
+
+
+def open_writer(settings):
+    """The writer for the configured link; the only way the app changes anything on the PBX."""
+    if settings.link == 'ssh':
+        return SshWriter(settings)
+    if settings.link == 'ami':
+        return AmiWriter(settings)
+    error = ConnectorError('config', 'neither AMI nor SSH is configured', 'pbx')
+    error.completed = 0
+    raise error
 
 
 def forget_detected_driver():

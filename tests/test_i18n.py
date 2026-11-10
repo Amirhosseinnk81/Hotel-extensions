@@ -81,7 +81,7 @@ class LanguageSwitchTests(AppTestCase):
         en = self.page(self.admin)
         self.assertIn('Extension list', en)
         self.assertNotIn('لیست داخلی‌ها', en)
-        self.assertIn('<title>Manage Extensions | Hotel Araz</title>', en)
+        self.assertIn('<title>Manage Extensions | Araz Desk</title>', en)
 
     def test_stored_values_are_not_translated_inside_inputs(self):
         self.admin.get('/lang/en')

@@ -22,8 +22,9 @@ GROUPS = (
     ('web panel', ('PBX_WEB_HOST', 'PBX_WEB_USER', 'PBX_WEB_PASS')),
     ('CDR database', ('PBX_CDR_HOST', 'PBX_CDR_USER', 'PBX_CDR_PASS')),
     ('AMI write user (day / night)', ('PBX_AMI_WRITE_USER', 'PBX_AMI_WRITE_SECRET')),
+    ('SSH link', ('PBX_SSH_USER', 'PBX_SSH_KEY', 'PBX_SSH_KNOWN_HOSTS')),
 )
-CHOICES = {'PBX_DAYNIGHT_WRITE_METHOD': ('setvar', 'dbput'), 'PBX_AMI_AUTH': ('md5', 'plain'), 'PBX_SIP_DRIVER': ('auto', 'sip', 'pjsip'), 'PBX_SOURCE': ('auto', 'ami', 'web')}
+CHOICES = {'PBX_DAYNIGHT_WRITE_METHOD': ('setvar', 'dbput'), 'PBX_AMI_AUTH': ('md5', 'plain'), 'PBX_SIP_DRIVER': ('auto', 'sip', 'pjsip'), 'PBX_SOURCE': ('auto', 'ami', 'ssh', 'web'), 'PBX_LINK': ('auto', 'ami', 'ssh')}
 
 
 def known_names():

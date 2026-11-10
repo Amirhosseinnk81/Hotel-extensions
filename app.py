@@ -1,7 +1,9 @@
+# Araz Desk - Copyright (c) 2026 Amirhossein Naeimaei. All rights reserved. Proprietary; see the LICENSE file.
 import csv
 import glob
 import hashlib
 import io
+import ipaddress
 import logging
 import os
 import re
@@ -44,6 +46,7 @@ from sqlalchemy.orm.attributes import flag_modified
 import envfile
 import features
 import i18n
+import license_key
 import outage_alerts
 import outage_monitor
 import outage_report
@@ -67,6 +70,12 @@ envfile.load_dotenv(envfile.env_path(BASE_DIR))
 IMPORT_TMP_DIR = os.path.join(BASE_DIR, 'tmp_imports')
 SECRET_KEY_FILE = os.path.join(BASE_DIR, '.secret_key')
 ADMIN_PREFIX_FILE = os.path.join(BASE_DIR, '.admin_prefix')
+
+# Product name (browser tab, footer) and the two-letter mark in the header. The hotel's own name stays in the pages.
+APP_NAME = os.getenv('APP_NAME', '').strip()[:40] or 'Araz Desk'
+APP_MARK = os.getenv('APP_MARK', '').strip()[:3] or 'AD'
+# Developer credit shown in the footer of every page; the LICENSE file requires it to stay.
+DEVELOPER = {'fa': 'امیرحسین نعیمائی', 'en': 'Amirhossein Naeimaei', 'url': 'http://amirhosseinnk.ir/'}
 
 # SHA-256 of secret keys that were committed to the public Git history and
 # must never be used again. If the key loaded at startup matches one of
@@ -226,6 +235,19 @@ def suggest_kind(extension):
 
 def parse_kind(value):
     return KIND_ALIASES.get(cell_text(value).lower())
+
+
+def phone_web_url(ip):
+    """The phone's own web configuration page (http://<last IP>/), or None when the stored value is not
+    a usable address. PHONE_WEB_SCHEME=https for phones that only answer on HTTPS."""
+    try:
+        address = ipaddress.ip_address(str(ip or '').strip())
+    except ValueError:
+        return None
+    if address.is_unspecified or address.is_loopback or address.is_multicast:
+        return None
+    scheme = 'https' if os.getenv('PHONE_WEB_SCHEME', '').strip().lower() == 'https' else 'http'
+    return f"{scheme}://{f'[{address}]' if address.version == 6 else address}/"
 
 
 def normalize_mac(value):
@@ -1060,13 +1082,16 @@ def pbx_config():
     web_pass = os.getenv('PBX_WEB_PASS', '')
     ami_ready = bool(host and user and secret)
     web_ready = bool(web_host and web_user and web_pass)
+    ssh_ready = pbx_connectors.load_settings().ssh.ready
     wanted = os.getenv('PBX_SOURCE', 'auto').strip().lower()
     if wanted == 'web':
         source = 'web' if web_ready else None
     elif wanted == 'ami':
         source = 'ami' if ami_ready else None
-    else:
-        source = 'ami' if ami_ready else 'web' if web_ready else None
+    elif wanted == 'ssh':
+        source = 'ssh' if ssh_ready else None
+    else:  # SSH reads `sip show peers` (with latency), so it comes before the web panel
+        source = 'ami' if ami_ready else 'ssh' if ssh_ready else 'web' if web_ready else None
     return {
         'host': host, 'port': number('PBX_AMI_PORT', '5038'), 'user': user, 'secret': secret,
         'auth': os.getenv('PBX_AMI_AUTH', '').strip().lower() or 'md5',  # md5 challenge (default) or plain
@@ -1114,7 +1139,7 @@ def load_dnd_snapshot(app_obj, reader_factory=None):
         extensions = [e.extension for e in Extension.query.filter(Extension.is_deleted == False).all()  # noqa: E712
                       if PBX_EXTENSION_NAME.match(e.extension)]
     settings = pbx_connectors.load_settings()
-    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+    with (reader_factory or pbx_connectors.open_reader)(settings) as reader:
         return pbx_dnd.read_snapshot(reader, extensions)
 
 
@@ -1123,14 +1148,14 @@ def load_pbx_directory(reader_factory=None):
     settings = pbx_connectors.load_settings()
     if settings.cdr.ready:
         return pbx_directory_sync.read_pbx_extensions(cdr_client=make_cdr_client())
-    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+    with (reader_factory or pbx_connectors.open_reader)(settings) as reader:
         return pbx_directory_sync.read_pbx_extensions(ami_reader=reader)
 
 
 def register_directory_snapshot():
     """Extension lists change rarely: read at most every 15 minutes (or PBX_SNAPSHOT_TTL if longer)."""
     settings = pbx_connectors.load_settings()
-    if not (settings.cdr.ready or settings.ami.ready):
+    if not (settings.cdr.ready or settings.reader_ready):
         pbx_snapshot.forget(pbx_directory_sync.SNAPSHOT_NAME)
         return None
     return pbx_snapshot.register(pbx_directory_sync.SNAPSHOT_NAME, load_pbx_directory, max(settings.snapshot_ttl, 900), min_interval=30)
@@ -1200,7 +1225,7 @@ def load_daynight(reader_factory=None):
         except pbx_connectors.ConnectorError as exc:
             tc_error = exc
     indexes = set(items) | cfg['allowed'] | set(cfg['labels'])
-    with (reader_factory or pbx_connectors.AmiReader)(settings) as reader:
+    with (reader_factory or pbx_connectors.open_reader)(settings) as reader:
         if indexes:
             states, present = pbx_daynight.read_states(reader, indexes)
         else:  # nothing known yet: look for any Call Flow that has a state
@@ -1222,7 +1247,7 @@ def load_daynight(reader_factory=None):
 
 def register_daynight_snapshot():
     settings = pbx_connectors.load_settings()
-    if not settings.ami.ready:
+    if not settings.reader_ready:
         pbx_snapshot.forget(pbx_daynight.SNAPSHOT_NAME)
         return None
     return pbx_snapshot.register(pbx_daynight.SNAPSHOT_NAME, load_daynight, settings.snapshot_ttl, min_interval=30)
@@ -1241,23 +1266,28 @@ def _web_error(exc):
 
 
 def read_health(reader_factory=None, scraper=None):
-    """One reading of the Issabel server: the AMI part and the dashboard part, each allowed to fail alone.
+    """One reading of the Issabel server: the link part (AMI or SSH) and the dashboard part, each allowed to
+    fail alone. 'ami_ok' / 'ami_error' describe the link, whichever it is. Over SSH, CPU / memory / disk come
+    from the PBX itself and the web dashboard is not needed.
     Raises ConnectorError only when nothing at all could be read (the snapshot then stays 'stale')."""
     settings, cfg = pbx_connectors.load_settings(), pbx_config()
     web_ready = bool(cfg['web_host'] and cfg['web_user'] and cfg['web_pass'])
-    if not settings.ami.ready and not web_ready and scraper is None:
-        raise pbx_connectors.ConnectorError('config', 'neither AMI nor the web panel is configured', 'health')
+    if not settings.reader_ready and not web_ready and scraper is None:
+        raise pbx_connectors.ConnectorError('config', 'neither AMI / SSH nor the web panel is configured', 'health')
     reading = {'ami_ok': False, 'ami_error': None, 'core': None, 'driver': None, 'trunks': [],
-               'dashboard': None, 'web_error': None, 'asterisk': None}
-    if settings.ami.ready:
+               'dashboard': None, 'web_error': None, 'asterisk': None, 'link': settings.link}
+    if settings.reader_ready:
         try:
-            with (reader_factory or pbx_connectors.AmiReader)(settings) as ami:
-                reading['core'] = ami.core_status()
-                driver, events = ami.registry()
+            with (reader_factory or pbx_connectors.open_reader)(settings) as link:
+                reading['core'] = link.core_status()
+                driver, events = link.registry()
                 reading.update(ami_ok=True, driver=driver, trunks=pbx_health.parse_trunks(driver, events))
+                if hasattr(link, 'system'):
+                    system = link.system()
+                    reading['dashboard'] = system if pbx_health.has_values(system) else None
         except pbx_connectors.ConnectorError as exc:
             reading['ami_error'] = exc
-    if web_ready or scraper is not None:
+    if reading['dashboard'] is None and (web_ready or scraper is not None):
         try:
             scraper = scraper or shared_scraper(cfg['web_host'], cfg['web_user'], cfg['web_pass'], cfg['web_verify_ssl'],
                                                 cfg['web_timeout'], cfg['web_login_path'], cfg['web_peers_path'])
@@ -1313,7 +1343,7 @@ def load_health_snapshot(app_obj):
 def health_sources_ready():
     """AMI or the web panel is configured right now (the health page needs at least one of them)."""
     settings, cfg = pbx_connectors.load_settings(), pbx_config()
-    return bool(settings.ami.ready or (cfg['web_host'] and cfg['web_user'] and cfg['web_pass']))
+    return bool(settings.reader_ready or (cfg['web_host'] and cfg['web_user'] and cfg['web_pass']))
 
 
 def health_alerts_enabled():
@@ -1330,9 +1360,9 @@ def register_health_snapshot(app_obj):
 
 
 def register_dnd_snapshot(app_obj):
-    """The DND snapshot exists only when AMI is configured (the web panel has no AstDB)."""
+    """The DND snapshot exists only when AMI or SSH is configured (the web panel has no AstDB)."""
     settings = pbx_connectors.load_settings()
-    if not settings.ami.ready:
+    if not settings.reader_ready:
         pbx_snapshot.forget(pbx_dnd.SNAPSHOT_NAME)
         return None
     return pbx_snapshot.register(pbx_dnd.SNAPSHOT_NAME, lambda: load_dnd_snapshot(app_obj), settings.snapshot_ttl, min_interval=30)
@@ -1427,6 +1457,8 @@ def sync_pbx_once(client_factory=None, now=None, web_scraper=None):
     started = time.monotonic()
     now = now or datetime.utcnow()
     cfg = pbx_config()
+    if client_factory is None and web_scraper is None and cfg['source'] == 'ssh':
+        web_scraper = pbx_connectors.SshPeerSource(pbx_connectors.load_settings())  # same interface as the web panel
     use_web = client_factory is None and (web_scraper is not None or cfg['source'] == 'web')
     if client_factory is None and not use_web:
         def client_factory():
@@ -1615,6 +1647,10 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     CSRFProtect(app)
+    app.jinja_env.globals['app_name'] = APP_NAME
+    app.jinja_env.globals['app_mark'] = APP_MARK
+    app.jinja_env.globals['developer'] = DEVELOPER
+    app.jinja_env.globals['phone_web_url'] = phone_web_url
     app.jinja_env.globals['dept_icon'] = department_icon
     app.jinja_env.globals['vendor_asset'] = vendor_asset_url
     def can_see_contact():
@@ -1767,6 +1803,45 @@ def create_app():
     @app.before_request
     def reset_permission_cache():
         clear_permission_cache()  # g is per request anyway; this keeps it true if a context is ever reused
+
+    # ---- License key (license_key.py): after it ends, the admin panel can be looked at but not changed ----
+    def license_status():
+        if 'license_status' not in g:
+            g.license_status = license_key.status(os.getenv('LICENSE_KEY', ''), datetime.now(LOCAL_TZ).date())
+        return g.license_status
+
+    app.jinja_env.globals['license_status'] = license_status
+
+    @app.before_request
+    def read_only_without_license():
+        """Blocks every change made through a permission-protected route while the license is not valid.
+        The public directory, sign-in / sign-out, a user's own password, the phone sync and the alerts go on."""
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return None
+        view = app.view_functions.get(request.endpoint or '')
+        if getattr(view, 'access', None) != 'permission' or license_status()['state'] != 'readonly':
+            return None
+        message = 'لایسنس نرم‌افزار معتبر نیست؛ پنل مدیریت تا تمدید لایسنس فقط قابل مشاهده است.'
+        if wants_json():
+            return _json_error(message, 403)
+        if not current_user.is_authenticated:
+            return _unauthenticated_response()
+        flash(message, 'danger')
+        referrer = urlparse(request.referrer or '')
+        same_site = referrer.netloc == request.host and referrer.path.startswith('/')
+        return redirect(referrer.path + ('?' + referrer.query if referrer.query else '') if same_site else url_for('license_page'))
+
+    @app.route(f'/{admin_prefix}/license')
+    @require_permission('license.view')
+    def license_page():
+        status = license_status()
+        jalali = current_lang() == 'fa'
+
+        def day(value):
+            if value is None:
+                return ''
+            return pbx_cdr.jalali_text(value) if jalali else value.strftime('%Y/%m/%d')
+        return render_template('license.html', lic=status, day=day)
 
     @app.before_request
     def sign_out_deactivated_users():
@@ -3031,7 +3106,7 @@ def create_app():
         if is_admin:
             payload['sync'] = {'source': cfg['source'], 'running': pbx_sync_state['running'], 'last_attempt': iso_utc(pbx_sync_state['last_attempt']),
                                'last_error': pbx_sync_state['last_error']}
-        if user_can(current_user, 'dnd.view') and pbx_connectors.load_settings().ami.ready:
+        if user_can(current_user, 'dnd.view') and pbx_connectors.load_settings().reader_ready:
             # from the cached snapshot only: polling this endpoint never reaches the PBX
             snapshot = pbx_snapshot.get(pbx_dnd.SNAPSHOT_NAME)
             data = snapshot.data or {}
@@ -3352,7 +3427,7 @@ def create_app():
 
         dnd, forwards = pbx_dnd.flagged(snapshot)
         floors = sorted({room_floor(ext) for ext in entries if room_floor(ext) is not None})
-        return render_template('dnd.html', snapshot=snapshot, configured=pbx_connectors.load_settings().ami.ready,
+        return render_template('dnd.html', snapshot=snapshot, configured=pbx_connectors.load_settings().reader_ready,
                                dnd=[(ext, entries.get(ext)) for ext in dnd if wanted(ext)],
                                forwards=[(ext, entries.get(ext), fwd, entries.get(fwd['to'])) for ext, fwd in forwards if wanted(ext)],
                                kind=kind, floor=floor, floors=floors, room_floor=room_floor)
@@ -3360,8 +3435,8 @@ def create_app():
     @app.route(f'/{admin_prefix}/dnd/refresh', methods=['POST'])
     @require_permission('dnd.view')
     def dnd_refresh():
-        if not pbx_connectors.load_settings().ami.ready:
-            flash('اتصال AMI به ایزابل تنظیم نشده است.', 'warning')
+        if not pbx_connectors.load_settings().reader_ready:
+            flash('اتصال AMI یا SSH به ایزابل تنظیم نشده است.', 'warning')
         else:
             snapshot = pbx_snapshot.refresh(pbx_dnd.SNAPSHOT_NAME, force=True)  # at most once per 30 s, whoever clicks
             if snapshot.error is not None and snapshot.state != 'ok':
@@ -3386,7 +3461,7 @@ def create_app():
         settings = pbx_connectors.load_settings()
         return render_template('pbx_directory.html', snapshot=snapshot, result=result,
                                counts=pbx_directory_sync.counts(result) if result else None,
-                               configured=settings.cdr.ready or settings.ami.ready, auto_create=pbx_config()['auto_create'])
+                               configured=settings.cdr.ready or settings.reader_ready, auto_create=pbx_config()['auto_create'])
 
     @app.route(f'/{admin_prefix}/pbx-directory/refresh', methods=['POST'])
     @require_permission('pbxsync.view')
@@ -3469,7 +3544,7 @@ def create_app():
         return render_template('daynight.html', snapshot=snapshot, data=snapshot.data if snapshot.state != 'unknown' else None,
                                configured=pbx_daynight.SNAPSHOT_NAME in pbx_snapshot.names(), cfg=daynight_config(),
                                changes=last_daynight_changes(), state_labels=pbx_daynight.STATE_LABELS,
-                               write_ready=pbx_connectors.load_settings().ami_write.ready)
+                               write_ready=pbx_connectors.load_settings().writer_ready)
 
     @app.route(f'/{admin_prefix}/daynight/refresh', methods=['POST'])
     @require_permission('daynight.view')
@@ -3486,8 +3561,8 @@ def create_app():
         """Persian reason why this Call Flow may not be switched now, or None."""
         if not cfg['write_enabled']:
             return 'تعویض روز/شب در تنظیمات خاموش است (PBX_DAYNIGHT_WRITE_ENABLED).'
-        if not pbx_connectors.load_settings().ami_write.ready:
-            return 'کاربر نوشتن AMI (PBX_AMI_WRITE_USER) تنظیم نشده است.'
+        if not pbx_connectors.load_settings().writer_ready:
+            return 'کاربر یا کلید نوشتن (PBX_AMI_WRITE_USER یا PBX_SSH_WRITE_KEY) تنظیم نشده است.'
         if not pbx_daynight.valid_index(index) or index not in cfg['allowed']:
             return 'این مورد در فهرست مجاز تعویض (PBX_DAYNIGHT_ALLOWED) نیست.'
         return None
@@ -3526,14 +3601,14 @@ def create_app():
         try:
             def read_state(i):
                 try:
-                    with pbx_connectors.AmiReader(settings) as reader:
+                    with pbx_connectors.open_reader(settings) as reader:
                         return pbx_daynight.state_of(reader.db_get('DAYNIGHT', f'C{i}'))
                 except pbx_connectors.ConnectorError as exc:
                     raise pbx_daynight.SwitchError(exc.fa, str(exc)) from exc
 
             def write(i, state):
                 try:
-                    pbx_connectors.AmiWriter(settings).run(pbx_daynight.write_actions(i, state, cfg['method'], cfg['devstate']))
+                    pbx_connectors.open_writer(settings).set_daynight(i, state, cfg['method'], cfg['devstate'])
                 except pbx_connectors.ConnectorError as exc:
                     if getattr(exc, 'completed', 0) >= 1:  # the state itself was written; only the BLF lamp failed
                         app.logger.warning('Day/night BLF update failed: %s', exc)

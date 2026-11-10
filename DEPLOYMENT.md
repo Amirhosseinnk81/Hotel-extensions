@@ -67,6 +67,8 @@ gunicorn -w 1 -b 0.0.0.0:8080 "app:create_app()"
 | `PDF_FONT_PATH` | (اختیاری) مسیر یک فونت فارسی TTF. اگر ست نشود، برنامه خودش فونت را پیدا می‌کند: ابتدا فایل‌های `.ttf` داخل پوشهٔ `fonts` کنار `app.py`، بعد Tahoma (ویندوز) یا Vazirmatn / Noto Naskh Arabic / DejaVu Sans (لینوکس). روی سرور لینوکسی بهتر است `Vazirmatn-Regular.ttf` را در پوشهٔ `fonts` بگذارید |
 | `TRUSTED_PROXIES` | (اختیاری) آی‌پی پروکسی‌هایی که هدر `X-Forwarded-For` آن‌ها پذیرفته می‌شود، با کاما جدا شده. پیش‌فرض: `127.0.0.1,::1` (Nginx یا IIS روی همان سرور). اگر پروکسی روی ماشین دیگری است، آی‌پی آن را اینجا بگذارید؛ وگرنه محدودیت تلاش لاگین روی آی‌پی پروکسی اعمال می‌شود، نه کاربر. هدر درخواست‌هایی که مستقیم می‌رسند نادیده گرفته می‌شود |
 | `SESSION_COOKIE_SECURE` | `1` را وقتی سایت روی HTTPS است ست کنید تا کوکی نشست فقط روی HTTPS ارسال شود. روی HTTP ساده ست نکنید، وگرنه ورود کار نمی‌کند |
+| `APP_NAME` / `APP_MARK` | (اختیاری) نام نرم‌افزار در عنوان تب و پایین صفحه‌ها، و نشان دوحرفی هدر. پیش‌فرض `Araz Desk` و `AD`. نام توسعه‌دهنده در پایین صفحه‌ها طبق فایل `LICENSE` ثابت است |
+| `LICENSE_KEY` | کلید لایسنس که توسعه‌دهنده صادر می‌کند (بخش ۱۳). بدون کلید معتبر، پنل مدیریت فقط قابل مشاهده است؛ دفترچه‌ی عمومی همیشه کار می‌کند |
 | `ADMIN_URL_PREFIX` | (اختیاری) آدرس دلخواه پنل مدیریت به‌جای رشته‌ی تصادفی |
 | `SECRET_KEY` | (اختیاری) در صورت عدم تنظیم، خودکار ساخته و در `.secret_key` ذخیره می‌شود. کلیدی که قبلاً در گیت commit شده بود دیگر پذیرفته نمی‌شود و به‌جای آن کلید جدید ساخته می‌شود |
 | `SHOW_CONTACT_PUBLICLY` | (اختیاری) `1` = ایمیل و موبایل سازمانی در صفحهٔ عمومی هم نمایش داده شود. پیش‌فرض: فقط برای مدیران واردشده |
@@ -78,7 +80,7 @@ gunicorn -w 1 -b 0.0.0.0:8080 "app:create_app()"
 | `PBX_SYNC_INTERVAL` | (اختیاری) فاصلهٔ همگام‌سازی به ثانیه. پیش‌فرض `30` و حداقل `15`. نام قدیمی `PBX_SYNC_INTERVAL_SECONDS` هم هنوز کار می‌کند. ایزابل هر ۶۰ ثانیه تلفن‌ها را qualify می‌کند، پس مقدار کمتر از ۳۰ فایده‌ای ندارد |
 | `PBX_WEB_HOST` / `PBX_WEB_USER` / `PBX_WEB_PASS` | (به‌جای AMI) اتصال از راه وب‌پنل ایزابل، وقتی SSH/روت و دسترسی به `manager.conf` ندارید. مثلاً `https://192.168.1.100`. بخش «اتصال از راه وب‌پنل» پایین را ببینید |
 | `PBX_VERIFY_SSL` | (اختیاری) تأیید گواهی HTTPS وب‌پنل. پیش‌فرض `False` چون ایزابل گواهی self-signed دارد |
-| `PBX_SOURCE` | (اختیاری) `ami` یا `web`. پیش‌فرض خودکار: اگر AMI تنظیم شده باشد AMI، وگرنه وب‌پنل |
+| `PBX_SOURCE` | (اختیاری) `ami`، `ssh` یا `web`. پیش‌فرض خودکار: AMI، بعد SSH، بعد وب‌پنل |
 | `PBX_WEB_TIMEOUT` / `PBX_WEB_LOGIN_PATH` / `PBX_WEB_PEERS_PATH` | (اختیاری) زمان انتظار هر درخواست (پیش‌فرض `10`)، آدرس فرم ورود (`/index.php`) و صفحهٔ منبع داخلی‌ها (پیش‌فرض `/index.php?menu=control_panel`؛ برای صفحهٔ قدیمی Asterisk Info مقدار `/index.php?menu=asterisk_info&rawmode=yes`) |
 | `PBX_SLOW_MS` | (اختیاری) تلفن آنلاینی که تأخیرش از این مقدار (میلی‌ثانیه) بیشتر یا برابر باشد نشان زرد «تأخیر بالا» می‌گیرد. پیش‌فرض `150` |
 | `PBX_AMI_TIMEOUT` | (اختیاری) زمان انتظار برای پاسخ PBX به ثانیه. پیش‌فرض `5` |
@@ -91,6 +93,8 @@ gunicorn -w 1 -b 0.0.0.0:8080 "app:create_app()"
 | `PBX_WEB_HEALTH_PATHS` / `PBX_HEALTH_*` | (اختیاری) صفحه‌ی داشبورد ایزابل برای CPU/حافظه/دیسک و آستانه‌های هشدار سلامت (بخش ۱۱-۹) |
 | `PBX_REC_WEB_USER` / `PBX_REC_WEB_PASS` / `PBX_REC_DOWNLOAD_PATH` / `PBX_REC_DOWNLOADS_PER_HOUR` / `PBX_REC_MAX_MB` | (اختیاری) پخش و دانلود ضبط مکالمات (بخش ۱۱-۱۰) |
 | `PBX_DAYNIGHT_*` / `PBX_AMI_WRITE_USER` / `PBX_AMI_WRITE_SECRET` | (اختیاری) نمایش و تعویض حالت روز/شب (بخش ۱۱-۱۱). تعویض به‌طور پیش‌فرض خاموش است |
+| `PBX_LINK` / `PBX_SSH_*` | (اختیاری) SSH محدود به‌جای AMI (بخش ۱۴). `PBX_LINK=auto` یعنی AMI اگر تنظیم باشد، وگرنه SSH |
+| `PHONE_WEB_SCHEME` | (اختیاری) `http` (پیش‌فرض) یا `https` برای دکمه‌ی «باز کردن وب کانفیگ تلفن» در صفحه‌ی ویرایش داخلی |
 | `PBX_SNAPSHOT_TTL` | (اختیاری) هر چند ثانیه یک‌بار داده‌های یک‌جا (DND، سلامت، …) از ایزابل خوانده شود. پیش‌فرض `120`، حداقل `30` |
 | `PBX_UA_BATCH` | (اختیاری) در هر دور User-Agent چند تلفن خوانده شود. پیش‌فرض `60`. دور اول که همه‌چیز تازه است چند دور طول می‌کشد تا مدل همهٔ تلفن‌ها پر شود |
 | `PBX_OUTAGE_MONITOR` / `PBX_OUTAGE_CONFIRM_SYNCS` / `PBX_OUTAGE_KINDS` / `PBX_OUTAGE_LOG` / `PBX_OUTAGE_KEEP_DAYS` | (اختیاری) لاگ قطعی تلفن‌ها؛ بخش ۹ و `.env.example` |
@@ -620,6 +624,7 @@ asterisk -rx "devstate change Custom:DAYNIGHT0 NOT_INUSE"
 | AMI خواندن `hotelapp` | `manager_custom.conf` | `write = reporting`، بدون `read` | وضعیت تلفن‌ها، DND/Forward، سلامت، خواندن روز/شب، مقایسه (بدون MySQL) |
 | AMI نوشتن `hotelapp_dn` | `manager_custom.conf` | `write = call` (یا `system,call` با `dbput`) | فقط تعویض روز/شب |
 | MySQL `hotel_cdr` | MariaDB | `SELECT` روی `asteriskcdrdb.cdr`؛ ستونی روی `asterisk.users (extension, name)` و `asterisk.devices (id, tech)`؛ `hotelapp_ro.daynight` (view بدون رمز)؛ اختیاری `asterisk.timeconditions (timeconditions_id, displayname)` | گزارش تماس، فهرست ضبط‌ها، مقایسه، نام Call Flowها |
+| SSH `hotelpbx` (جایگزین AMI) | لینوکس ایزابل | فقط اجرای `/usr/local/sbin/hotel-pbx` با دو کلید (`ro` و `rw`)؛ بدون shell | همه‌ی کارهای AMI، به‌علاوه‌ی CPU/حافظه/دیسک (بخش ۱۴) |
 | وب‌پنل (کاربر اصلی) | Issabel ← Users | ماژول‌های Operator Panel و Dashboard | وضعیت تلفن‌ها (بدون AMI)، CPU/حافظه/دیسک |
 | وب‌پنل ضبط‌ها (پیشنهادی) | Issabel ← Users | فقط ماژول Monitoring | پخش و دانلود ضبط‌ها |
 
@@ -688,3 +693,131 @@ nssm start HotelExtensions
 
 ### کامیت‌ها
 هر مرحله یک کامیت جدا (به ترتیب ۱ تا ۸)؛ پیام‌ها در گزارش هر مرحله آمده‌اند.
+
+## ۱۳. کلید لایسنس نرم‌افزار (یک‌ساله)
+
+متن حقوقی در فایل [`LICENSE`](LICENSE) است؛ این بخش سازوکار فنی آن است.
+
+**چطور کار می‌کند:** توسعه‌دهنده با یک کلید خصوصی (که فقط روی کامپیوتر خودش است) یک «کلید لایسنس» امضاشده می‌سازد: نام مشتری، تاریخ شروع و پایان، و روزهای مهلت. برنامه فقط کلید عمومی را دارد (`license_public.json` کنار `app.py`) و می‌تواند کلید را بررسی کند ولی نمی‌تواند بسازد؛ دست‌بردن در تاریخِ داخل کلید آن را باطل می‌کند. تاریخ از ساعت سرور برنامه خوانده می‌شود.
+
+| وضعیت | چه وقت | چه می‌شود |
+|---|---|---|
+| راه‌اندازی‌نشده | فایل `license_public.json` وجود ندارد | هیچ بررسی‌ای نیست (دوره‌ی آزمایش) |
+| معتبر | تا پایان تاریخ کلید | همه‌چیز فعال؛ از ۳۰ روز مانده، نوار زرد «روزهای مانده» در پنل |
+| مهلت | تا ۱۴ روز بعد از پایان (مقدار داخل کلید) | همه‌چیز فعال، با نوار قرمز |
+| فقط‌مشاهده | بعد از مهلت، یا کلید نیست / نامعتبر است | **دفترچه‌ی عمومی، همگام‌سازی تلفن‌ها، لاگ قطعی‌ها و هشدارها کار می‌کنند.** پنل مدیریت دیده می‌شود (گزارش‌ها و خروجی‌ها هم)، ولی هر تغییری (افزودن، ویرایش، حذف، ایمپورت، مدیریت کاربران، تعویض روز/شب، همگام‌سازی دستی) رد می‌شود. ورود، خروج و تغییر رمز خود کاربر کار می‌کند |
+
+وضعیت، تاریخ پایان (شمسی) و روزهای مانده در «پنل ← سیستم ← لایسنس» دیده می‌شود (دسترسی `license.view`: مدیر ارشد و اپراتور؛ نوار هشدار بالای پنل را همه‌ی کاربران می‌بینند).
+
+### برای توسعه‌دهنده (روی کامپیوتر خودتان، نه سرور هتل)
+
+1. **یک بار، ساخت جفت‌کلید:**
+   ```
+   python tools/make_license.py init
+   ```
+   کلید خصوصی در `%USERPROFILE%\.araz-desk\license_private.json` ساخته می‌شود (ابزار اجازه نمی‌دهد داخل پوشه‌ی پروژه باشد) و کلید عمومی در `license_public.json`. از کلید خصوصی یک نسخه‌ی پشتیبان امن نگه دارید: بدون آن نمی‌توانید تمدید کنید، و هر کس آن را داشته باشد می‌تواند لایسنس صادر کند. `license_public.json` را کامیت کنید.
+2. **صدور کلید یک‌ساله:**
+   ```
+   python tools/make_license.py issue --customer "Hotel Araz"
+   ```
+   (گزینه‌ها: `--days 365`، `--from 2026-11-10`، `--grace 14`.) خط `LICENSE_KEY=...` چاپ‌شده را به هتل بدهید.
+3. **بررسی یک کلید:** `python tools/make_license.py show <key>`
+
+⚠ **ترتیب مهم است:** از نسخه‌ای که `license_public.json` دارد، سرور بدون `LICENSE_KEY` معتبر پنل را فقط‌مشاهده می‌کند. پس اول کلید را صادر کنید و در `.env` سرور بگذارید، بعد آن نسخه را نصب کنید.
+
+### روی سرور هتل
+
+خط `LICENSE_KEY=...` را در `.env` بگذارید (یک خط، بدون فاصله) و `nssm restart HotelExtensions`. برای تمدید، همان خط را با کلید تازه عوض کنید و ری‌استارت کنید.
+
+### محدودیت و Rollback
+
+- کد پایتون روی سرور قابل خواندن است؛ کسی که به سرور دسترسی دارد و برنامه‌نویسی می‌داند می‌تواند بررسی را حذف کند. این سازوکار استفاده‌ی عادی را کنترل می‌کند؛ پشتوانه‌ی اصلی متن `LICENSE` است که دورزدن بررسی را ممنوع کرده.
+- اگر ساعت سرور عقب کشیده شود، لایسنس دیرتر تمام می‌شود (بررسی آنلاین وجود ندارد، چون سرور به اینترنت وصل نیست).
+- **برگرداندن (توسعه‌دهنده):** حذف `license_public.json` از نسخه، بررسی را خاموش می‌کند. **رفع فوری روی سرور:** یک کلید تازه در `.env`.
+
+## ۱۴. اتصال SSH محدود به‌جای AMI
+
+اگر نمی‌خواهید پورت AMI (۵۰۳۸) باز شود، همه‌ی کارهایی که برنامه با AMI انجام می‌دهد با SSH هم ممکن است: وضعیت تلفن‌ها، DND/Forward، سلامت (و CPU، حافظه و دیسک بدون نیاز به داشبورد وب)، مقایسه، روز/شب. کلید SSH برنامه **هیچ shell‌ای باز نمی‌کند**: روی ایزابل فقط می‌تواند اسکریپت `tools/hotel-pbx.sh` را اجرا کند (forced command)، و آن اسکریپت فقط چند دستور ثابت با ورودی‌های سخت‌گیرانه‌ی بررسی‌شده را می‌پذیرد. دو کلید جدا داریم: `ro` (فقط خواندنی) و `rw` (فقط تعویض روز/شب و کلید آزمایشی `HOTELTEST`).
+
+**مقایسه با AMI:** پورت ۲۲ به‌جای ۵۰۳۸ (OpenSSH روی CentOS 7 هم دیگر پچ نمی‌گیرد، پس همان قاعده: فقط از `<APP_IP>`). DND با **یک** درخواست خوانده می‌شود (نه ۴ برابر تعداد داخلی‌ها). نیازی به کلاس‌های AMI یا تنظیم `live_dangerously` نیست؛ تعویض روز/شب با همان دستورهای `database put` و `devstate change` انجام می‌شود که دستی هم می‌زنید.
+
+### روی ایزابل (با root)
+
+1. **کاربر بی‌اختیار:**
+   ```bash
+   useradd -r -m -d /home/hotelpbx -s /bin/bash hotelpbx
+   passwd -l hotelpbx
+   ```
+   (پوسته باید `/bin/bash` باشد تا forced command اجرا شود؛ ورود با رمز قفل است و کلیدها shell نمی‌دهند.)
+2. **اسکریپت:** فایل `tools/hotel-pbx.sh` را با WinSCP یا `scp` به `/tmp` ببرید و:
+   ```bash
+   install -o root -g root -m 755 /tmp/hotel-pbx.sh /usr/local/sbin/hotel-pbx
+   sed -i 's/\r$//' /usr/local/sbin/hotel-pbx
+   ```
+3. **اجازه‌ی اجرا با کاربر asterisk** (فقط همین اسکریپت و فقط با `ro` یا `rw`). با `visudo -f /etc/sudoers.d/hotelpbx`:
+   ```
+   Defaults:hotelpbx !requiretty
+   Defaults:hotelpbx env_keep += "SSH_ORIGINAL_COMMAND"
+   hotelpbx ALL=(asterisk) NOPASSWD: /usr/local/sbin/hotel-pbx ro, /usr/local/sbin/hotel-pbx rw
+   ```
+   سپس `chmod 440 /etc/sudoers.d/hotelpbx` و `visudo -c`.
+4. **آزمایش محلی** (بدون شبکه):
+   ```bash
+   sudo -u hotelpbx env SSH_ORIGINAL_COMMAND="ping" sudo -n -u asterisk /usr/local/sbin/hotel-pbx ro
+   sudo -u hotelpbx env SSH_ORIGINAL_COMMAND="astdb DND" sudo -n -u asterisk /usr/local/sbin/hotel-pbx ro
+   sudo -u hotelpbx env SSH_ORIGINAL_COMMAND="daynight-set 0 DAY 1" sudo -n -u asterisk /usr/local/sbin/hotel-pbx ro
+   ```
+   اولی `OK hotel-pbx ro`، دومی فهرست DND، و سومی باید `ERR not allowed with this key` بدهد.
+
+### روی سرور برنامه (ویندوز، PowerShell با Administrator)
+
+5. **کلیدها** (بیرون از پوشه‌ی برنامه، فقط برای SYSTEM و Administrators):
+   ```powershell
+   New-Item -ItemType Directory -Force C:\ProgramData\ArazDesk\ssh
+   ssh-keygen -t ed25519 -N '""' -C araz-desk-ro -f C:\ProgramData\ArazDesk\ssh\pbx_ro
+   ssh-keygen -t ed25519 -N '""' -C araz-desk-rw -f C:\ProgramData\ArazDesk\ssh\pbx_rw
+   icacls C:\ProgramData\ArazDesk\ssh /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
+   ```
+   کلید `pbx_rw` را فقط اگر تعویض روز/شب از راه SSH لازم است بسازید.
+6. **کلید شناسایی ایزابل:**
+   ```powershell
+   ssh-keyscan -t ed25519 <PBX_IP> | Out-File -Encoding ascii C:\ProgramData\ArazDesk\ssh\known_hosts
+   ssh-keygen -lf C:\ProgramData\ArazDesk\ssh\known_hosts
+   ```
+   اثر انگشت را با خروجی `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` روی خود ایزابل مقایسه کنید؛ **باید یکی باشند**. برنامه به سروری با کلید دیگر وصل نمی‌شود.
+
+### دوباره روی ایزابل
+
+7. محتوای `pbx_ro.pub` (و `pbx_rw.pub`) را در `/home/hotelpbx/.ssh/authorized_keys` بگذارید، هر کدام یک خط:
+   ```
+   restrict,from="<APP_IP>",command="sudo -n -u asterisk /usr/local/sbin/hotel-pbx ro" ssh-ed25519 AAAA... araz-desk-ro
+   restrict,from="<APP_IP>",command="sudo -n -u asterisk /usr/local/sbin/hotel-pbx rw" ssh-ed25519 AAAA... araz-desk-rw
+   ```
+   ```bash
+   chown -R hotelpbx:hotelpbx /home/hotelpbx/.ssh && chmod 700 /home/hotelpbx/.ssh && chmod 600 /home/hotelpbx/.ssh/authorized_keys
+   ```
+   `restrict` همه‌ی امکانات دیگر (pty، port forwarding، agent، X11) را می‌بندد و `from` کلید را به IP سرور برنامه می‌بندد.
+8. **فایروال:** TCP `22` فقط از `<APP_IP>` (و از کامپیوتر مدیر برای کار خودش)، در ایزابل و میکروتیک. اگر SSH را جایگزین AMI کرده‌اید، قانون `5038` را حذف کنید.
+
+### تنظیم برنامه و آزمایش
+
+9. در `.env`:
+   ```
+   PBX_LINK=ssh
+   PBX_SSH_HOST=<PBX_IP>
+   PBX_SSH_USER=hotelpbx
+   PBX_SSH_KEY=C:\ProgramData\ArazDesk\ssh\pbx_ro
+   PBX_SSH_WRITE_KEY=C:\ProgramData\ArazDesk\ssh\pbx_rw
+   PBX_SSH_KNOWN_HOSTS=C:\ProgramData\ArazDesk\ssh\known_hosts
+   PBX_SOURCE=ssh
+   ```
+   (`PBX_SOURCE=ssh` وضعیت تلفن‌ها را هم از SSH می‌خواند، با تأخیر ms؛ مدل تلفن از User-Agent فقط با AMI پر می‌شود.)
+10. `python tools/check_pbx.py --dbget 50` باید `SSH OK` و CPU/حافظه/دیسک را نشان دهد؛ برای کلید نوشتن: `python tools/check_pbx.py --test-daynight-write` (بعدش روی ایزابل `asterisk -rx "database deltree HOTELTEST"`). بعد `nssm restart HotelExtensions`.
+
+**خطاها:** `hostkey` یعنی کلید ایزابل با `known_hosts` نمی‌خواند (یا ایزابل دوباره نصب شده، یا مسیر شبکه دست‌کاری شده): تا اثر انگشت را بررسی نکرده‌اید `known_hosts` را عوض نکنید. `auth` یعنی کلید پذیرفته نشد (خط `authorized_keys`، `from`، یا دسترسی فایل‌ها). `permission` یعنی اسکریپت درخواست را رد کرد.
+
+**Rollback:** خط کلیدها را از `authorized_keys` حذف کنید (یا `userdel -r hotelpbx`)، `rm /etc/sudoers.d/hotelpbx /usr/local/sbin/hotel-pbx`، قانون فایروال ۲۲ را برای `<APP_IP>` بردارید، و در `.env` متغیرهای `PBX_SSH_*` را حذف کنید (یا `PBX_LINK=ami`).
+
+## ۱۵. دکمه‌ی وب کانفیگ تلفن
+
+در «ویرایش داخلی»، اگر ایزابل برای آن تلفن IP دیده باشد، دکمه‌ی «🌐 باز کردن وب کانفیگ تلفن» صفحه‌ی خود تلفن را (`http://<IP>/`) در تب تازه باز می‌کند. IP همان آخرین آدرسی است که همگام‌سازی دیده (ممکن است تلفن بعد از آن IP دیگری گرفته باشد). مرورگر کاربر باید به شبکه‌ی تلفن‌ها دسترسی داشته باشد؛ برنامه چیزی را پراکسی نمی‌کند و رمز تلفن را نمی‌داند. برای تلفن‌هایی که فقط HTTPS دارند: `PHONE_WEB_SCHEME=https`.

@@ -121,6 +121,11 @@
     <div class="form-actions">
       <button type="submit" class="btn btn-primary px-4" data-loading-text="{{ t('در حال ذخیره...') }}">{{ t('ذخیره اطلاعات') }}</button>
       <a href="{{ admin_home() or url_for('index') }}" class="btn btn-secondary">{{ t('انصراف') }}</a>
+      {% set web_url = phone_web_url(entry.last_ip) if entry else none %}
+      {% if web_url %}
+        <a href="{{ web_url }}" class="btn btn-outline-primary phone-web-btn" target="_blank" rel="noopener noreferrer"
+           title="{{ t('آخرین IP که ایزابل برای این تلفن دیده است') }}">🌐 {{ t('باز کردن وب کانفیگ تلفن') }} <bdi dir="ltr">{{ entry.last_ip }}</bdi></a>
+      {% endif %}
     </div>
   </form>
 </div>

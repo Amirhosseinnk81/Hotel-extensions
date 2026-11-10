@@ -134,6 +134,8 @@ register_feature('roles.manage', 'مدیریت نقش‌ها', SYSTEM, 'ساخت
                  menu_item=MenuItem('admin_roles', 'key', 'roles', 'نقش‌ها و دسترسی‌ها', 25))
 register_feature('activity_log.view', 'مشاهده‌ی لاگ فعالیت‌ها', SYSTEM,
                  menu_item=MenuItem('activity_log', 'clock', 'activity', 'لاگ فعالیت‌ها', 30))
+register_feature('license.view', 'مشاهده‌ی وضعیت لایسنس', SYSTEM, 'تاریخ پایان لایسنس نرم‌افزار و روزهای باقی‌مانده',
+                 menu_item=MenuItem('license_page', 'key', 'license', 'لایسنس', 40))
 
 
 # ---- Built-in roles -------------------------------------------------------------------------------
@@ -147,7 +149,7 @@ SYSTEM_ROLES = (
     ('operator', 'اپراتور', 'کار روزمره: ویرایش داخلی‌ها، بخش‌ها و پایش PBX؛ بدون عملیات حساس و بدون لاگ‌ها.', (
         'extensions.view', 'extensions.edit', 'extensions.delete', 'extensions.export', 'departments.manage',
         'pbx.view', 'pbx.sync', 'pbx.review', 'outages.view', 'outages.export', 'outages.alerts',
-        'trash.view', 'trash.restore', 'calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view',
+        'trash.view', 'trash.restore', 'calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view', 'license.view',
     )),
     ('viewer', 'مشاهده‌گر', 'فقط مشاهده‌ی داخلی‌ها، وضعیت PBX و قطعی‌ها.', (
         'extensions.view', 'pbx.view', 'outages.view', 'outages.alerts',
@@ -158,7 +160,7 @@ SYSTEM_ROLES = (
 # Keys added after the first release. Built-in roles that already exist in a database get them once
 # (as listed in SYSTEM_ROLES above), recorded in role_default_grant, so a key an admin later removes
 # from a role is never added back. New installs get them from SYSTEM_ROLES directly.
-MIGRATED_DEFAULTS = ('calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view')
+MIGRATED_DEFAULTS = ('calls.view', 'dnd.view', 'pbxsync.view', 'pbxhealth.view', 'pbxhealth.alerts', 'daynight.view', 'license.view')
 
 
 def default_roles_for(key):

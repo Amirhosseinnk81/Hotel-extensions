@@ -14,3 +14,10 @@ for _name in [name for name in os.environ if name.startswith('PBX_')]:
     del os.environ[_name]
 
 os.environ['PBX_DOTENV'] = '0'  # after the loop above, which removes every PBX_* name
+
+# A developer's checkout holds license_public.json (see license_key.py), which would put every test into
+# "no license key -> read-only admin". Tests that are about licensing point this at their own key file.
+import license_key  # noqa: E402
+
+license_key.PUBLIC_KEY_PATH = ''
+os.environ.pop('LICENSE_KEY', None)
